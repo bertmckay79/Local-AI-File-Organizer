@@ -351,6 +351,7 @@ class MainWindow(QMainWindow):
         """Handle analysis completion."""
         self.file_categories = file_categories
         self.organize_view.set_file_categories(file_categories)
+        self.duplicates_view._refresh_calibre_duplicates()
         self.dashboard.update_stats()
 
     def _on_scan_paths_changed(self, paths: list[str]):
@@ -390,6 +391,7 @@ class MainWindow(QMainWindow):
 
     def _on_quick_organize_finished(self, results: dict):
         """Handle quick organize completion."""
+        self.duplicates_view._refresh_calibre_duplicates()
         scanned = results.get("scanned", 0)
         organized = results.get("organized", 0)
         self.file_count_label.setText(f"{organized} files organized")
