@@ -16,7 +16,7 @@ def split_category(value: str) -> tuple[str, str | None]:
         return parent.strip(), leaf.strip() or None
     for parent in LEGACY_PARENTS:
         prefix = parent + " - "
-        if value.startswith(prefix):
+        if value.casefold().startswith(prefix.casefold()):
             return parent, value[len(prefix):].strip() or None
     return value, None
 

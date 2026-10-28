@@ -70,3 +70,8 @@ def test_organizer_rejects_path_traversal(tmp_path):
     organizer.date_structures = {}
     with pytest.raises(ValueError):
         organizer.get_category_path("RPG / ../../private", "book.pdf")
+
+
+
+def test_case_insensitive_legacy_name_is_normalised():
+    assert normalise_category("software - vue.js") == "Software / vue.js"
