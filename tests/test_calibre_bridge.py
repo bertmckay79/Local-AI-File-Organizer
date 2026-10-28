@@ -275,3 +275,18 @@ def test_calibre_library_source_not_moved_even_if_manually_assigned(tmp_path):
     assert ebook.is_file()
     assert operation is None
     db.disconnect()
+
+
+
+def test_metadata_isbn_mismatch_and_different_title_not_applied(monkeypatch):
+    bridge = CalibreBridge({"enabled": True})
+    opf = ('<package xmlns:dc="http://purl.org/dc/elements/1.1/"><metadata>'
+           '<dc:title>Different Book</dc:title>'
+           '<dc:identifier>0306406152</dc:identifier>'
+           '</metadata></package>')
+    monkeypatch.setattr(bridge, "_executable", lambda program: program)
+    monkeypatch.setattr(bridge, "_run", lambda name, *args: opf)
+    monkeypatch.setattr(bridge, "_db", lambda *args: pytest.fail("Unsafe metadata update"))
+    assert "mismatch" in bridge._fetch_and_set_metadata(
+        8, BookIdentity("The Test Book", isbn="9780306406157")
+    )

@@ -196,8 +196,12 @@ class CalibreBridge:
             if not opf_xml.strip():
                 return "No online metadata returned"
             fetched = _identity_from_opf(opf_xml, "")
-            if book.isbn and fetched.isbn and book.isbn != fetched.isbn:
-                return "Online metadata ignored: ISBN mismatch"
+            # Online search sources can return a different edition or an
+            # unrelated book. Never overwrite existing metadata unless the
+            # identifier matches OR the result's title matches exactly.
+            if book.isbn and fetched.isbn != book.isbn:
+                if _norm(book.title) != _norm(fetched.title):
+                    return "Online metadata ignored: ISBN/title mismatch"
             if not book.isbn and _norm(book.title) != _norm(fetched.title):
                 return "Online metadata ignored: title mismatch"
             with tempfile.TemporaryDirectory(prefix="calibre-fetched-meta-") as tmp:
