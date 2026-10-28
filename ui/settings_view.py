@@ -4,6 +4,7 @@ Allows configuration of all application settings.
 """
 
 import json
+from copy import copy
 from pathlib import Path
 
 from PySide6.QtWidgets import (
@@ -739,46 +740,83 @@ class SettingsView(QWidget):
             f"Models: {', '.join(models[:15])}" + ("..." if len(models) > 15 else ""))
 
     def _send_chat_test(self):
-        """Send a test message to Ollama and show the response."""
+        """Test the provider and model currently selected in Settings."""
         msg = self.chat_input.text().strip()
         if not msg:
             return
-        if not self.ollama or not self.ollama.is_available():
+
+        # Test unsaved settings without mutating the AI client used by
+        # the Analyze and Quick Organize tabs.
+        client = copy(self.ollama)
+        provider = self.ai_provider.currentData()
+        if provider == "cloud":
+            api_key = self.cloud_api_key.text().strip()
+            if not api_key:
+                self.chat_display.append("⚠️ Enter a cloud API key before testing.")
+                return
+            client.update_settings(
+                ai_provider="cloud",
+                api_key=api_key,
+                base_url=self.cloud_base_url.text().strip(),
+                cloud_timeout=self.cloud_timeout.value(),
+                cloud_temperature=self.cloud_temp.value(),
+                cloud_max_tokens=self.cloud_max_tokens.value(),
+            )
+            client.cloud_model = self.cloud_model.text().strip()
+            model_name = client.cloud_model
+        else:
+            client.update_settings(
+                ai_provider="local",
+                server_url=self.ai_url.text().strip(),
+                model=self.ai_model.currentText().strip(),
+                timeout=self.ai_timeout.value(),
+                temperature=self.ai_temp.value(),
+                max_tokens=self.ai_max_tokens.value(),
+            )
+            model_name = client.model
+
+        if not model_name:
+            self.chat_display.append("⚠️ Select a model before testing.")
+            return
+
+        if not client.is_available():
             self.chat_display.append(
-                f"\n⚠️ Ollama is not running. Start Ollama first.\n"
-                f"   Server: {self.ai_url.text().strip()}"
+                f"⚠️ AI provider is unavailable for model {model_name}. "
+                "Check the connection, credentials and server address."
             )
             return
 
-        self.chat_display.append(f"\n🧑 You: {msg}")
+        self.chat_display.append(f"\n🧑 You: {msg}\n🔧 Model: {model_name}")
         self.chat_input.clear()
         self.chat_send_btn.setEnabled(False)
-        self.chat_send_btn.setText("Thinking...")
+        self.chat_send_btn.setText("Sending...")
 
-        # Run in background thread to avoid freezing UI
+        # Keep inference off the UI thread.
         class ChatWorker(QThread):
             response_ready = Signal(str)
             error_signal = Signal(str)
 
-            def __init__(self, ollama, message):
+            def __init__(self, ollama, message, model_name):
                 super().__init__()
                 self.ollama = ollama
                 self.message = message
+                self.model_name = model_name
 
             def run(self):
                 try:
-                    response = self.ollama.chat(
-                        [{"role": "user", "content": self.message}],
-                        num_predict=200,
-                    )
-                    if response:
+                    response = self.ollama.test_chat(self.message)
+                    if response and response.strip():
                         self.response_ready.emit(response.strip())
                     else:
-                        self.error_signal.emit("AI returned empty response")
+                        self.error_signal.emit(
+                            f"No visible response from {self.model_name}. "
+                            "Check the Logs tab for Ollama response details; "
+                            "the selected model may not be generating an answer."
+                        )
                 except Exception as e:
                     self.error_signal.emit(str(e))
 
-        self._chat_worker = ChatWorker(self.ollama, msg)
+        self._chat_worker = ChatWorker(client, msg, model_name)
         self._chat_worker.response_ready.connect(self._chat_response)
         self._chat_worker.error_signal.connect(self._chat_error)
         self._chat_worker.start()

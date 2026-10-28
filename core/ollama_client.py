@@ -220,6 +220,22 @@ class OllamaClient:
             return self._chat_cloud(messages, use_json_format, num_predict)
         return self._chat_local(messages, stream, use_json_format, num_predict, think)
 
+    def test_chat(self, message: str) -> Optional[str]:
+        """Test normal conversation, never JSON-mode classification.
+
+        Qwen3 reasoning can consume a small token budget without returning
+        visible content. Disable thinking for local Qwen3 variants and allow
+        a sufficient response budget for a short human-readable answer.
+        """
+        model_name = self.cloud_model if self.is_cloud else self.model
+        no_thinking = not self.is_cloud and model_name.lower().startswith("qwen3")
+        return self.chat(
+            [{"role": "user", "content": message}],
+            use_json_format=False,
+            num_predict=max(768, self.cloud_max_tokens if self.is_cloud else self.max_tokens),
+            think=False if no_thinking else None,
+        )
+
     def _chat_local(self, messages: list[dict], stream: bool,
                     use_json_format: bool, num_predict: int,
                     think: Optional[bool] = None) -> Optional[str]:
