@@ -36,7 +36,7 @@ def test_pdf_content_category(monkeypatch):
     monkeypatch.setattr("core.document_classifier.extract_pdf_evidence", lambda p: "Vue 3 Pinia")
     service, file = classifier("Software - Vue.js")
     result = service.classify(file)
-    assert result.category == "Software / Vue.js" and not result.requires_review
+    assert result.category == "Software - Vue.js" and not result.requires_review
     assert service.ollama.classify_file.call_args.kwargs["category_details"] == CATS
 
 
@@ -123,7 +123,7 @@ def test_ai_prompt_contains_category_keywords(monkeypatch):
         {"file_name": "vue.pdf", "extension": ".pdf"}, [c["name"] for c in CATS],
         "Vue Pinia", category_details=CATS
     )
-    assert actual == "Software / Vue.js"
+    assert actual == "Software - Vue.js"
     assert "Pinia, Composition API" in calls[0][0][1]["content"]
     assert calls[0][1]["num_predict"] >= 512
 
@@ -273,3 +273,49 @@ def test_suggestion_never_becomes_move_category(monkeypatch):
     decision = service.classify(file)
     assert decision.category == NEEDS_REVIEW
     assert decision.suggested_category == "Maker & DIY"
+
+
+def test_built_in_hierarchical_category_loading(tmp_path):
+    from core.document_classifier import load_category_definitions
+    import json
+
+    categories = {
+        "categories": [
+            {
+                "name": "Dungeons & Dragons", "parent": "RPG",
+                "extensions": [".pdf", ".epub"], "keywords": ["D&D"]
+            },
+            {
+                "name": "Godot", "parent": "Game Development",
+                "extensions": [".pdf"], "keywords": ["GDScript"]
+            },
+            {
+                "name": "RPG - Pathfinder", "extensions": [".pdf"],
+                "keywords": ["Paizo"]
+            }
+        ]
+    }
+    config = tmp_path / "categories.json"
+    config.write_text(json.dumps(categories), encoding="utf-8")
+    result = load_category_definitions(config)
+    assert [c["name"] for c in result] == [
+        "RPG / Dungeons & Dragons", "Game Development / Godot",
+        "RPG / Pathfinder", "Needs Review"
+    ]
+    assert result[0]["subcategory"] == "Dungeons & Dragons"
+
+
+def test_custom_subcategory_is_available_to_subject_retry(tmp_path):
+    from core.document_classifier import load_category_definitions, book_subject_categories
+    import json
+
+    config = tmp_path / "categories.json"
+    config.write_text(json.dumps({"categories": []}), encoding="utf-8")
+    db = Mock()
+    db.get_custom_categories.return_value = [{
+        "name": "Crafts / Model Painting", "extensions": [".pdf", ".epub"],
+        "keywords": ["minis", "brushwork"]
+    }]
+    result = load_category_definitions(config, db)
+    selected = book_subject_categories(result, ".pdf")
+    assert [r["name"] for r in selected] == ["Crafts / Model Painting"]
