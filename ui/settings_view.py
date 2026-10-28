@@ -1035,9 +1035,19 @@ class SettingsView(QWidget):
             max_tokens=config["ollama"]["max_tokens"],
         )
 
-        self.config_manager.save(config)
+        try:
+            self.config_manager.save(config)
+        except (OSError, ValueError, TypeError) as exc:
+            QMessageBox.critical(
+                self, "Settings Not Saved",
+                f"Could not save settings to:\n{self.config_manager.config_path}\n\n{exc}"
+            )
+            return
         self.settings_changed.emit(config)
-        QMessageBox.information(self, "Settings Saved", "All settings have been saved.")
+        QMessageBox.information(
+            self, "Settings Saved",
+            f"Settings saved to:\n{self.config_manager.config_path}"
+        )
 
     def _reset_defaults(self):
         """Reset to default configuration."""
@@ -1047,9 +1057,14 @@ class SettingsView(QWidget):
             QMessageBox.Yes | QMessageBox.No,
         )
         if reply == QMessageBox.Yes:
-            import os
-            user_config = Path(__file__).parent.parent / "config" / "user_config.json"
-            if user_config.exists():
-                os.remove(str(user_config))
-            self.config_manager.load()
-            QMessageBox.information(self, "Reset Complete", "Settings reset to defaults.")
+            try:
+                defaults = self.config_manager.reset()
+            except OSError as exc:
+                QMessageBox.critical(self, "Reset Failed", str(exc))
+                return
+            self.settings_changed.emit(defaults)
+            QMessageBox.information(
+                self, "Reset Complete",
+                "Default settings saved. Restart the application to refresh "
+                "all controls. Your categories and scanned-file database are preserved."
+            )

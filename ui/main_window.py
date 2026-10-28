@@ -28,6 +28,7 @@ from ui.settings_view import SettingsView
 from ui.logs_view import LogsView
 
 from utils.config import ConfigManager
+from utils.storage import resolve_database_path
 from utils.logger import get_logger
 from database.db_manager import DatabaseManager
 from database.operations import OperationHistory
@@ -48,7 +49,9 @@ class MainWindow(QMainWindow):
         self.config = self.config_manager.config
 
         # Initialize database
-        db_path = self.config_manager.db_settings.get("path", "file_organizer.db")
+        db_path = resolve_database_path(
+            self.config_manager.db_settings.get("path", "file_organizer.db")
+        )
         self.db = DatabaseManager(db_path)
         self.op_history = OperationHistory(self.db)
 
@@ -151,6 +154,12 @@ class MainWindow(QMainWindow):
         self.scan_view.scan_progress.connect(self._update_progress)
         self.quick_organize_view.finished_organize.connect(self._on_quick_organize_finished)
         self.settings_view.settings_changed.connect(self._on_settings_changed)
+        self.scan_view.paths_changed.connect(self._on_scan_paths_changed)
+        self.quick_organize_view.paths_changed.connect(self._on_quick_scan_paths_changed)
+
+        restored_tab = self.config_manager.get("ui", "active_tab", default=0)
+        if isinstance(restored_tab, int) and 0 <= restored_tab < self.tabs.count():
+            self.tabs.setCurrentIndex(restored_tab)
 
         layout.addWidget(self.tabs)
         self.setCentralWidget(central)
@@ -307,6 +316,21 @@ class MainWindow(QMainWindow):
         self.file_categories = file_categories
         self.organize_view.set_file_categories(file_categories)
         self.dashboard.update_stats()
+
+    def _on_scan_paths_changed(self, paths: list[str]):
+        """Persist selected scan folders immediately, not only on app shutdown."""
+        self.config_manager.set("scan", "recent_paths", paths)
+        try:
+            self.config_manager.save()
+        except OSError as exc:
+            self.logger.warning("Could not save scan locations: %s", exc)
+
+    def _on_quick_scan_paths_changed(self, paths: list[str]):
+        self.config_manager.set("organize", "quick_scan_paths", paths)
+        try:
+            self.config_manager.save()
+        except OSError as exc:
+            self.logger.warning("Could not save Quick Organize locations: %s", exc)
 
     def _on_settings_changed(self, config: dict):
         """Handle settings change — update unified AI client."""
@@ -553,12 +577,24 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         """Save state on close."""
-        # Save window size
+        # Save window state and last-used folders to durable user storage.
         self.config_manager.set("ui", "window_width", self.width())
         self.config_manager.set("ui", "window_height", self.height())
-        self.config_manager.save()
-
-        # Disconnect database
+        self.config_manager.set("ui", "active_tab", self.tabs.currentIndex())
+        self.config_manager.set("scan", "recent_paths", list(self.scan_view.scan_paths))
+        self.config_manager.set("organize", "quick_scan_paths",
+                                list(self.quick_organize_view.scan_paths))
+        try:
+            self.config_manager.save()
+        except OSError as exc:
+            self.logger.error("Failed to save state on close: %s", exc)
+            QMessageBox.warning(
+                self, "Settings Not Saved",
+                f"Unable to save application settings to:\n"
+                f"{self.config_manager.config_path}\n\n{exc}"
+            )
+            event.ignore()
+            return
         self.db.disconnect()
         event.accept()
 
