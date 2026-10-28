@@ -125,7 +125,9 @@ def extract_epub_evidence(path, limit=7000):
                 if member not in names:
                     continue
                 parser = _HTMLText()
-                parser.feed(archive.read(member).decode("utf-8", errors="replace"))
+                # Limit bytes read from each ZIP member to avoid oversized HTML entries.
+                with archive.open(member) as page:
+                    parser.feed(page.read(131072).decode("utf-8", errors="replace"))
                 snippet = " ".join(parser.words)[:1200]
                 if snippet:
                     parts.append(f"[{href}] {snippet}")

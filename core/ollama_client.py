@@ -329,7 +329,7 @@ class OllamaClient:
             f"Extension: {extension}",
         ]
         if metadata:
-            prompt_parts.append(f"Metadata: {json.dumps(metadata, indent=2)}")
+            prompt_parts.append(f"Metadata: {json.dumps(metadata, indent=2, default=str)}")
         if content_summary:
             prompt_parts.append(f"Document evidence: {content_summary[:7000]}")
 
