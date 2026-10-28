@@ -261,6 +261,7 @@ class CalibreBridge:
                     "review", "Possible matching Calibre title; import not attempted",
                     title=book.title, library=str(self.library),
                 )
+            before_ids = {int(item["id"]) for item in self._records}
             args = ["add"]
             if book.title:
                 args.extend(["--title", book.title])
@@ -269,23 +270,40 @@ class CalibreBridge:
             if book.isbn:
                 args.extend(["--isbn", book.isbn])
             args.append(str(path))
-            message = self._db(*args)
-            match = re.search(r"Added book ids?:\s*([0-9]+)", message, re.I)
-            if not match:
-                # Calibre can decline a duplicate import with a zero exit code.
-                self._list(refresh=True)
-                existing, _ = self._match(book)
+            self._db(*args)
+            after_records = self._list(refresh=True)
+            new_records = [
+                item for item in after_records if int(item["id"]) not in before_ids
+            ]
+            # Don't rely on localized CLI success messages to find the ID.
+            if len(new_records) == 1:
+                book_id = int(new_records[0]["id"])
+            elif len(new_records) > 1:
+                same = [
+                    item for item in new_records
+                    if (book.isbn and book.isbn in _book_isbns(item))
+                    or (_norm(book.title) == _norm(item.get("title"))
+                        and (not book.author
+                             or _authors(book.author).intersection(_authors(item.get("authors")))))
+                ]
+                if len(same) != 1:
+                    return CalibreResult(
+                        "review", "Multiple concurrent Calibre imports; verify new book manually",
+                        title=book.title, library=str(self.library),
+                    )
+                book_id = int(same[0]["id"])
+            else:
+                # Calibre can reject duplicates with a zero exit status.
+                existing, ambiguous = self._match(book)
                 if existing:
                     return CalibreResult(
                         "duplicate", f"Calibre already has this book (ID {existing['id']})",
                         int(existing["id"]), book.title, str(self.library),
                     )
                 return CalibreResult(
-                    "review", "Calibre add returned no new book ID; check Calibre logs",
+                    "review", "Calibre did not add a book; check its library",
                     title=book.title, library=str(self.library),
                 )
-            book_id = int(match.group(1))
-            self._list(refresh=True)
             metadata_message = (
                 self._fetch_and_set_metadata(book_id, book)
                 if self.fetch_metadata else "Online metadata download disabled"

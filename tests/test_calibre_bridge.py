@@ -96,9 +96,14 @@ def test_title_only_match_is_ambiguous_and_not_imported(monkeypatch, tmp_path):
 def test_missing_ebook_imports_and_fetches_metadata(monkeypatch, tmp_path):
     bridge = _bridge(monkeypatch, [], import_missing=True, fetch_metadata=True)
     calls = []
-    monkeypatch.setattr(bridge, "_db", lambda *args: (
-        calls.append(args) or "Added book ids: 133"
-    ))
+    def emulate_add(*args):
+        calls.append(args)
+        bridge._records = [{
+            "id": 133, "title": "The Test Book",
+            "authors": ["Jane Doe"], "isbn": ISBN,
+        }]
+        return "Calibre completed the import"
+    monkeypatch.setattr(bridge, "_db", emulate_add)
     fetched = []
     monkeypatch.setattr(bridge, "_fetch_and_set_metadata",
                         lambda book_id, book: (fetched.append((book_id, book.title)) or
