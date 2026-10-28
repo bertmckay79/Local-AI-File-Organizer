@@ -167,3 +167,24 @@ def test_qwen35_thinking_setting_is_top_level_payload(monkeypatch):
     assert payload["think"] is False
     assert "format" not in payload
     assert payload["options"]["num_predict"] >= 768
+
+
+def test_generic_book_ai_result_gets_subject_only_retry(monkeypatch):
+    monkeypatch.setattr("core.document_classifier.extract_pdf_evidence", lambda p: "Game master advice")
+    service, file = classifier("Documents")
+    service.definitions = CATS + [{"name": "RPG - Game Master Resources", "keywords": ["GM"]}]
+    service.category_names = [item["name"] for item in service.definitions]
+    service.ollama.classify_file.side_effect = ["Documents", "RPG - Game Master Resources"]
+    result = service.classify(file)
+    assert result.category == "RPG - Game Master Resources"
+    assert not result.requires_review
+    retry_categories = service.ollama.classify_file.call_args.args[1]
+    assert "Documents" not in retry_categories
+
+
+def test_empty_ai_response_gives_actionable_review_reason(monkeypatch):
+    monkeypatch.setattr("core.document_classifier.extract_pdf_evidence", lambda p: "World building tools")
+    service, file = classifier(None)
+    result = service.classify(file)
+    assert result.category == NEEDS_REVIEW
+    assert "Ollama" in result.reason

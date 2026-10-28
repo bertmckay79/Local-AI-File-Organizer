@@ -100,7 +100,7 @@ class AnalyzeWorker(QThread):
     """Worker thread for AI analysis (or rule-based fallback)."""
 
     progress = Signal(int, int)
-    file_analyzed = Signal(str, str)  # file_path, category
+    file_analyzed = Signal(str, str, str)  # file_path, category, reason
     status_update = Signal(str)
     error = Signal(str)
     finished_analysis = Signal(dict)  # {file_path: category}
@@ -158,7 +158,7 @@ class AnalyzeWorker(QThread):
                     decision = classifier.classify(file_data)
                     category = decision.category
                     results[file_path] = category
-                    self.file_analyzed.emit(file_path, category)
+                    self.file_analyzed.emit(file_path, category, decision.reason)
                     file_data["category"] = category
                     file_data["metadata_json"] = (
                         json.dumps(decision.metadata, default=str) if decision.metadata else None
@@ -177,7 +177,7 @@ class AnalyzeWorker(QThread):
                     # Rule-based fallback
                     category = rule_classifier.classify(file_data)
                     results[file_path] = category
-                    self.file_analyzed.emit(file_path, category)
+                    self.file_analyzed.emit(file_path, category, "Extension-only classification")
 
                     file_data["category"] = category
                     file_data["analyzed_at"] = json.dumps({"timestamp": None, "method": "rule-based"})
@@ -187,7 +187,7 @@ class AnalyzeWorker(QThread):
                 self.logger.error(f"Analysis error for {file_name}: {e}")
                 category = NEEDS_REVIEW if self.use_ai else "Miscellaneous"
                 results[file_path] = category
-                self.file_analyzed.emit(file_path, category)
+                self.file_analyzed.emit(file_path, category, str(e)[:160])
                 errors += 1
 
             processed += 1
@@ -293,7 +293,7 @@ class AnalyzeView(QWidget):
 
         self.preview_table = QTableWidget()
         self.preview_table.setColumnCount(4)
-        self.preview_table.setHorizontalHeaderLabels(["File", "Path", "Category", "Confidence"])
+        self.preview_table.setHorizontalHeaderLabels(["File", "Path", "Category", "Classification reason"])
         self.preview_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
         self.preview_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         self.preview_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
@@ -449,16 +449,14 @@ class AnalyzeView(QWidget):
         self.progress_bar.setMaximum(total)
         self.progress_bar.setValue(current)
 
-    def _on_file_analyzed(self, file_path: str, category: str):
+    def _on_file_analyzed(self, file_path: str, category: str, reason: str):
         """Add a result to the preview table."""
         row = self.preview_table.rowCount()
         self.preview_table.insertRow(row)
         self.preview_table.setItem(row, 0, QTableWidgetItem(Path(file_path).name))
         self.preview_table.setItem(row, 1, QTableWidgetItem(file_path))
         self.preview_table.setItem(row, 2, QTableWidgetItem(category))
-        self.preview_table.setItem(
-            row, 3, QTableWidgetItem("Review" if category == NEEDS_REVIEW else "—")
-        )
+        self.preview_table.setItem(row, 3, QTableWidgetItem(reason))
 
     def _on_status(self, msg: str):
         self.status_label.setText(msg)

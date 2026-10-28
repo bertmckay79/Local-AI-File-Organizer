@@ -215,8 +215,11 @@ class QuickOrganizeWorker(QThread):
             results["categories"][category] = results["categories"].get(category, 0) + 1
             results["analyzed"] += 1
 
-            dest = ("Manual review — file unchanged" if category == NEEDS_REVIEW else
-                    str(self.organizer.get_category_path(category, file_path) / Path(file_path).name))
+            dest = (
+                f"Manual review — {decision.reason}" if category == NEEDS_REVIEW and self.use_ai
+                else ("Manual review — file unchanged" if category == NEEDS_REVIEW else
+                      str(self.organizer.get_category_path(category, file_path) / Path(file_path).name))
+            )
             self.file_processed.emit(file_data.get("file_name", ""), category, dest)
             self.progress.emit("Analyzing", i + 1, total)
 
