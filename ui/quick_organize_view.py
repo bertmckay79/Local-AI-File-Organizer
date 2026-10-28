@@ -6,6 +6,12 @@ Runs the entire pipeline in a single flow with a live progress display.
 import os
 import json
 from pathlib import Path
+from core.document_classifier import (
+    DocumentClassificationService, load_category_definitions, NEEDS_REVIEW
+)
+from core.category_hierarchy import normalise_category, split_category
+from core.category_hierarchy import category_fields
+from core.calibre_bridge import CalibreBridge, apply_calibre_result
 from datetime import datetime
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QProgressBar,
@@ -159,19 +165,15 @@ class QuickOrganizeWorker(QThread):
         from ui.analyze_view import RuleBasedClassifier
 
         categories_path = Path(__file__).parent.parent / "config" / "categories.json"
-        with open(categories_path, "r") as f:
-            cat_config = json.load(f)
-        categories = [c["name"] for c in cat_config["categories"]]
-
-        # Add custom categories from DB (same as Analyze tab)
-        try:
-            custom = self.db.get_custom_categories()
-            categories.extend(c["name"] for c in custom if c["name"] not in categories)
-        except Exception:
-            pass
-
+        definitions = load_category_definitions(categories_path, self.db)
+        categories = [c["name"] for c in definitions]
         rule_classifier = RuleBasedClassifier(categories)
+        classifier = DocumentClassificationService(
+            self.ollama, self.content_reader, self.metadata_extractor, self.ocr, definitions,
+            lookup_enabled=self.config.get("book_lookup", {}).get("external_enabled", False),
+        )
         file_categories = {}
+        calibre = CalibreBridge(self.config.get("calibre", {}))
         total = len(files)
 
         for i, file_data in enumerate(files):
@@ -181,69 +183,77 @@ class QuickOrganizeWorker(QThread):
             category = None
 
             if self.use_ai:
-                # Extract metadata (same as AnalyzeWorker)
-                metadata = {}
+                decision = classifier.classify(file_data)
+                category = decision.category
+                file_data.update(category_fields(category))
+                file_data["metadata_json"] = (
+                    json.dumps(decision.metadata, default=str) if decision.metadata else None
+                )
+                file_data["content_summary"] = decision.content_summary
+                file_data["analyzed_at"] = json.dumps({
+                    "method": "ai",
+                    "requires_review": decision.requires_review,
+                    "reason": decision.reason,
+                    "suggested_category": decision.suggested_category,
+                    "book_isbn": decision.book_isbn,
+                    "book_title": decision.book_title,
+                })
+                if decision.requires_review:
+                    self.logger.warning("Quick Organize skipped %s: %s",
+                                        file_path, decision.reason)
                 try:
-                    metadata = self.metadata_extractor.extract(file_path)
-                except Exception:
-                    pass
-
-                # Read content for documents (same as AnalyzeWorker)
-                content_summary = None
-                try:
-                    content_summary = self.content_reader.read_summary(file_path, max_length=500)
-                except Exception:
-                    pass
-
-                # OCR for scanned PDFs (same as AnalyzeWorker)
-                if not content_summary and self.ocr and self.ocr.is_available():
-                    try:
-                        content_summary = self.ocr.extract_text(file_path, max_length=500)
-                    except Exception:
-                        pass
-
-                file_info = {
-                    "file_name": file_data.get("file_name", ""),
-                    "extension": file_data.get("extension", ""),
-                    "metadata": metadata,
-                }
-                try:
-                    category = self.ollama.classify_file(file_info, categories, content_summary)
-                except Exception:
-                    category = None
-
-                # If AI fails or returns Miscellaneous, try rule-based as fallback
-                if not category or category == "Miscellaneous":
-                    rule_category = rule_classifier.classify(file_data)
-                    if rule_category and rule_category != "Miscellaneous":
-                        category = rule_category
-
-                # Save analysis results to DB (same as AnalyzeWorker)
-                if category:
-                    file_data["category"] = category
-                    file_data["metadata_json"] = json.dumps(metadata, default=str) if metadata else None
-                    file_data["content_summary"] = content_summary
-                    try:
-                        self.db.upsert_file(file_data)
-                    except Exception:
-                        pass
+                    self.db.upsert_file(file_data)
+                except Exception as exc:
+                    self.logger.warning("Could not save AI result for %s: %s", file_path, exc)
             else:
                 category = rule_classifier.classify(file_data)
                 # Save to DB
-                file_data["category"] = category
+                file_data.update(category_fields(category))
                 try:
                     self.db.upsert_file(file_data)
                 except Exception:
                     pass
 
             if not category:
-                category = rule_classifier.classify(file_data)
+                category = NEEDS_REVIEW if self.use_ai else rule_classifier.classify(file_data)
 
-            file_categories[file_path] = category
+            calibre_result = calibre.process(file_path)
+            if calibre_result.status != "skipped":
+                apply_calibre_result(file_data, calibre_result)
+                try:
+                    audit = json.loads(file_data.get("analyzed_at") or "{}")
+                except (TypeError, ValueError):
+                    audit = {}
+                audit["calibre"] = {
+                    "status": calibre_result.status,
+                    "book_id": calibre_result.book_id,
+                    "message": calibre_result.message,
+                }
+                audit["requires_review"] = True
+                file_data["analyzed_at"] = json.dumps(audit)
+                # Duplicates and imported original ebooks stay at their source
+                # location; Calibre has its own independent library copy.
+                category = NEEDS_REVIEW
+                file_data.update(category_fields(category))
+                self.db.upsert_file(file_data)
+
+            # Keep uncertain results visible but out of the automatic move queue.
+            if category != NEEDS_REVIEW:
+                file_categories[file_path] = category
             results["categories"][category] = results["categories"].get(category, 0) + 1
             results["analyzed"] += 1
 
-            dest = str(self.organizer.get_category_path(category, file_path) / Path(file_path).name)
+            if calibre_result.status != "skipped":
+                dest = f"Calibre {calibre_result.status}: {calibre_result.message}"
+            elif category == NEEDS_REVIEW:
+                dest = ("Manual review — " + decision.reason) if self.use_ai else (
+                    "Manual review — file unchanged"
+                )
+            else:
+                dest = str(
+                    self.organizer.get_category_path(category, file_path)
+                    / Path(file_path).name
+                )
             self.file_processed.emit(file_data.get("file_name", ""), category, dest)
             self.progress.emit("Analyzing", i + 1, total)
 
@@ -256,6 +266,7 @@ class QuickOrganizeWorker(QThread):
         return file_categories
 
     def _organize_stage(self, file_categories, results):
+        file_categories = {p: c for p, c in file_categories.items() if c != NEEDS_REVIEW}
         # Apply category filter
         filter_cat = self._filter_category
         if filter_cat and filter_cat != "all":
@@ -311,6 +322,7 @@ class QuickOrganizeView(QWidget):
     """All-in-one: Scan -> Analyze -> Organize in a single flow."""
 
     finished_organize = Signal(dict)
+    paths_changed = Signal(list)
 
     def __init__(self, config, db, ollama, organizer, metadata_extractor, content_reader, ocr):
         super().__init__()
@@ -326,6 +338,9 @@ class QuickOrganizeView(QWidget):
         self._metadata_map = {}
         self._last_op_ids = []
         self._init_ui()
+        for existing in self.config.get("organize", {}).get("quick_scan_paths", []):
+            if isinstance(existing, str) and existing:
+                self.add_scan_path(existing, notify=False)
 
     def _init_ui(self):
         layout = QVBoxLayout(self)
@@ -436,8 +451,7 @@ class QuickOrganizeView(QWidget):
     def _add_folder(self):
         folder = QFileDialog.getExistingDirectory(self, "Select Folder to Scan")
         if folder:
-            self.scan_paths.append(folder)
-            self.folder_list.setText("  |  ".join(self.scan_paths))
+            self.add_scan_path(folder)
             # Default output path = first scan folder
             if not self.output_edit.text().strip():
                 self.output_edit.setText(folder)
@@ -445,19 +459,14 @@ class QuickOrganizeView(QWidget):
     def _clear_folders(self):
         self.scan_paths.clear()
         self.folder_list.setText("")
+        self.paths_changed.emit([])
 
     def _populate_date_struct_table(self):
         """Populate the per-category date structure table."""
         categories_path = Path(__file__).parent.parent / "config" / "categories.json"
-        with open(categories_path, "r") as f:
-            cat_config = json.load(f)
-        all_cats = [c["name"] for c in cat_config["categories"]]
-
-        try:
-            custom = self.db.get_custom_categories()
-            all_cats.extend(c["name"] for c in custom if c["name"] not in all_cats)
-        except Exception:
-            pass
+        all_cats = [
+            c["name"] for c in load_category_definitions(categories_path, self.db)
+        ]
 
         saved = self.config.get("organize", {}).get("date_structures", {})
 
@@ -494,9 +503,12 @@ class QuickOrganizeView(QWidget):
         if folder:
             self.output_edit.setText(folder)
 
-    def add_scan_path(self, path):
-        self.scan_paths.append(path)
-        self.folder_list.setText("  |  ".join(self.scan_paths))
+    def add_scan_path(self, path, notify=True):
+        if path not in self.scan_paths:
+            self.scan_paths.append(path)
+            self.folder_list.setText("  |  ".join(self.scan_paths))
+            if notify:
+                self.paths_changed.emit(list(self.scan_paths))
 
     def _on_go_btn(self):
         """Toggle between Go and Stop."""
@@ -521,7 +533,15 @@ class QuickOrganizeView(QWidget):
         # Other options come from Settings → Organize tab
         self.organizer.update_config(self.config)
 
-        use_ai = self.config.get("analyze", {}).get("use_ai", False) and self.ollama.is_available()
+        requested_ai = self.config.get("analyze", {}).get("use_ai", False)
+        if requested_ai and not self.ollama.is_available():
+            QMessageBox.warning(
+                self, "AI Unavailable",
+                "AI classification is enabled but Ollama is unavailable. "
+                "Quick Organize was cancelled to prevent extension-only sorting."
+            )
+            return
+        use_ai = requested_ai
         bulk = organize_config.get("bulk_mode", True)
 
         self.results_table.setRowCount(0)

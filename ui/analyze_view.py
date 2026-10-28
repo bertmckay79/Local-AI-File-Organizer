@@ -6,10 +6,17 @@ Falls back to rule-based classification when Ollama is not available.
 
 import json
 from pathlib import Path
+from core.document_classifier import (
+    DocumentClassificationService, load_category_definitions, NEEDS_REVIEW
+)
+from core.category_hierarchy import (
+    category_fields, category_key, normalise_category, split_category
+)
+from core.calibre_bridge import CalibreBridge, apply_calibre_result
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QProgressBar,
     QTableWidget, QTableWidgetItem, QHeaderView, QGroupBox, QMessageBox,
-    QCheckBox, QComboBox, QTextEdit, QSplitter, QTabWidget
+    QCheckBox, QComboBox, QTextEdit, QSplitter, QTabWidget, QInputDialog
 )
 from PySide6.QtCore import Qt, Signal, QThread, QTimer
 
@@ -97,7 +104,7 @@ class AnalyzeWorker(QThread):
     """Worker thread for AI analysis (or rule-based fallback)."""
 
     progress = Signal(int, int)
-    file_analyzed = Signal(str, str)  # file_path, category
+    file_analyzed = Signal(str, str, str, str, str)  # path, category, suggestion, reason, calibre_status
     status_update = Signal(str)
     error = Signal(str)
     finished_analysis = Signal(dict)  # {file_path: category}
@@ -105,10 +112,16 @@ class AnalyzeWorker(QThread):
     def __init__(self, files: list[dict], categories: list[str],
                  ollama: OllamaClient, metadata_extractor: MetadataExtractor,
                  content_reader: ContentReader, ocr: OCRProcessor, db: DatabaseManager,
-                 use_ai: bool = True):
+                 use_ai: bool = True, category_definitions: list[dict] = None,
+                 lookup_enabled: bool = False, calibre_settings: dict | None = None):
         super().__init__()
         self.files = files
         self.categories = categories
+        self.lookup_enabled = lookup_enabled
+        self.calibre_settings = calibre_settings or {}
+        self.category_definitions = category_definitions or [
+            {"name": name, "keywords": []} for name in categories
+        ]
         self.ollama = ollama
         self.metadata_extractor = metadata_extractor
         self.content_reader = content_reader
@@ -133,9 +146,14 @@ class AnalyzeWorker(QThread):
         else:
             self.status_update.emit(f"Analyzing {total} files (rule-based, no AI)...")
 
-        # Use rule-based classifier as fallback
-        # Always create rule_classifier — used as fallback even in AI mode
+        # Use extension rules only when rule-based mode was explicitly selected.
         rule_classifier = RuleBasedClassifier(self.categories)
+        classifier = DocumentClassificationService(
+            self.ollama, self.content_reader, self.metadata_extractor,
+            self.ocr, self.category_definitions,
+            lookup_enabled=self.lookup_enabled,
+        )
+        calibre = CalibreBridge(self.calibre_settings)
 
         for file_data in self.files:
             if self._cancel:
@@ -145,69 +163,59 @@ class AnalyzeWorker(QThread):
             file_name = file_data.get("file_name", "unknown")
 
             try:
+                suggestion = ""
+                reason = "Extension-only classification"
                 if self.use_ai:
-                    # Extract metadata
-                    metadata = {}
-                    try:
-                        metadata = self.metadata_extractor.extract(file_path)
-                    except Exception:
-                        pass
-
-                    # Read content for documents
-                    content_summary = None
-                    try:
-                        content_summary = self.content_reader.read_summary(file_path, max_length=500)
-                    except Exception:
-                        pass
-
-                    # OCR for scanned PDFs (if enabled)
-                    if not content_summary and self.ocr.is_available():
-                        try:
-                            content_summary = self.ocr.extract_text(file_path, max_length=500)
-                        except Exception:
-                            pass
-
-                    # Classify with Ollama
-                    file_info = {
-                        "file_name": file_name,
-                        "extension": file_data.get("extension", ""),
-                        "metadata": metadata,
+                    decision = classifier.classify(file_data)
+                    category = decision.category
+                    suggestion = decision.suggested_category or ""
+                    reason = decision.reason
+                    file_data.update(category_fields(category))
+                    file_data["metadata_json"] = (
+                        json.dumps(decision.metadata, default=str)
+                        if decision.metadata else None
+                    )
+                    file_data["content_summary"] = decision.content_summary
+                    audit = {
+                        "method": "ai",
+                        "requires_review": decision.requires_review,
+                        "reason": decision.reason,
+                        "suggested_category": decision.suggested_category,
+                        "book_isbn": decision.book_isbn,
+                        "book_title": decision.book_title,
                     }
-
-                    category = self.ollama.classify_file(file_info, self.categories, content_summary)
-
-                    # If AI fails or returns Miscellaneous, try rule-based as fallback
-                    if not category or category == "Miscellaneous":
-                        rule_category = rule_classifier.classify(file_data)
-                        if rule_category and rule_category != "Miscellaneous":
-                            category = rule_category
-
-                    if category:
-                        results[file_path] = category
-                        self.file_analyzed.emit(file_path, category)
-
-                        # Update database
-                        file_data["category"] = category
-                        file_data["metadata_json"] = json.dumps(metadata, default=str) if metadata else None
-                        file_data["content_summary"] = content_summary
-                        file_data["analyzed_at"] = json.dumps({"timestamp": None})
-                        self.db.upsert_file(file_data)
-                    else:
-                        results[file_path] = "Miscellaneous"
-                        errors += 1
                 else:
-                    # Rule-based fallback
                     category = rule_classifier.classify(file_data)
-                    results[file_path] = category
-                    self.file_analyzed.emit(file_path, category)
+                    file_data.update(category_fields(category))
+                    audit = {"method": "rule-based", "reason": reason}
 
-                    file_data["category"] = category
-                    file_data["analyzed_at"] = json.dumps({"timestamp": None, "method": "rule-based"})
-                    self.db.upsert_file(file_data)
-
+                # This check uses the local Calibre CLI and is separate from
+                # the optional Ollama/online book-lookup workflow.
+                calibre_result = calibre.process(file_path)
+                status = ""
+                if calibre_result.status != "skipped":
+                    status = calibre_result.status.title()
+                    reason += " | " + calibre_result.message
+                    apply_calibre_result(file_data, calibre_result)
+                    audit["calibre"] = {
+                        "status": calibre_result.status,
+                        "book_id": calibre_result.book_id,
+                        "message": calibre_result.message,
+                    }
+                    # Never enqueue duplicates, uncertain matches or freshly
+                    # imported originals for another file move.
+                    category = NEEDS_REVIEW
+                    file_data.update(category_fields(category))
+                    audit["requires_review"] = True
+                file_data["analyzed_at"] = json.dumps(audit)
+                results[file_path] = category
+                self.db.upsert_file(file_data)
+                self.file_analyzed.emit(file_path, category, suggestion, reason, status)
             except Exception as e:
                 self.logger.error(f"Analysis error for {file_name}: {e}")
-                results[file_path] = "Miscellaneous"
+                category = NEEDS_REVIEW if self.use_ai else "Miscellaneous"
+                results[file_path] = category
+                self.file_analyzed.emit(file_path, category, "", str(e)[:160], "Error")
                 errors += 1
 
             processed += 1
@@ -240,6 +248,7 @@ class AnalyzeView(QWidget):
         self.files: list[dict] = []
         self.analyze_worker = None
         self.logger = get_logger()
+        self._current_results = {}
         self._init_ui()
 
         # Check AI status on init (deferred to avoid blocking UI)
@@ -312,12 +321,18 @@ class AnalyzeView(QWidget):
         preview_layout = QVBoxLayout()
 
         self.preview_table = QTableWidget()
-        self.preview_table.setColumnCount(4)
-        self.preview_table.setHorizontalHeaderLabels(["File", "Path", "Category", "Confidence"])
+        self.preview_table.setColumnCount(7)
+        self.preview_table.setHorizontalHeaderLabels([
+            "File", "Path", "Category", "Subcategory",
+            "Suggested category", "Classification reason", "Calibre"
+        ])
         self.preview_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
         self.preview_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         self.preview_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
         self.preview_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        self.preview_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeToContents)
+        self.preview_table.horizontalHeader().setSectionResizeMode(5, QHeaderView.Stretch)
+        self.preview_table.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeToContents)
         self.preview_table.setAlternatingRowColors(True)
         preview_layout.addWidget(self.preview_table)
 
@@ -338,6 +353,18 @@ class AnalyzeView(QWidget):
         self.cancel_btn.clicked.connect(self._cancel_analysis)
         ctrl_layout.addWidget(self.cancel_btn)
 
+        accept_btn = QPushButton("✓ Accept Suggested Category")
+        accept_btn.clicked.connect(self._accept_suggestion)
+        ctrl_layout.addWidget(accept_btn)
+
+        assign_btn = QPushButton("Assign Existing...")
+        assign_btn.clicked.connect(self._assign_existing_category)
+        ctrl_layout.addWidget(assign_btn)
+
+        create_btn = QPushButton("➕ New Category / Subcategory")
+        create_btn.clicked.connect(self._create_category_from_review)
+        ctrl_layout.addWidget(create_btn)
+
         ctrl_layout.addStretch()
         layout.addLayout(ctrl_layout)
 
@@ -352,6 +379,7 @@ class AnalyzeView(QWidget):
     def set_files(self, files: list[dict]):
         """Set the files to analyze."""
         self.files = files
+        self._current_results = {}
         self.status_label.setText(f"{len(files)} files ready for analysis")
         self.preview_table.setRowCount(0)
 
@@ -423,7 +451,7 @@ class AnalyzeView(QWidget):
             unanalyzed = []
             for f in self.files:
                 cat = f.get("category", "")
-                if not cat or cat == "Uncategorized" or cat == "Miscellaneous":
+                if not cat or cat in ("Uncategorized", "Miscellaneous", NEEDS_REVIEW):
                     unanalyzed.append(f)
             if not unanalyzed:
                 self.status_label.setText("All files already analyzed. Toggle Bulk mode to re-analyze all.")
@@ -436,13 +464,8 @@ class AnalyzeView(QWidget):
 
         # Get categories from config
         categories_path = Path(__file__).parent.parent / "config" / "categories.json"
-        with open(categories_path, "r") as f:
-            cat_config = json.load(f)
-        categories = [c["name"] for c in cat_config["categories"]]
-
-        # Add custom categories from DB
-        custom = self.db.get_custom_categories()
-        categories.extend(c["name"] for c in custom)
+        definitions = load_category_definitions(categories_path, self.db)
+        categories = [c["name"] for c in definitions]
 
         self.progress_bar.setVisible(True)
         self.progress_bar.setValue(0)
@@ -455,7 +478,9 @@ class AnalyzeView(QWidget):
         self.analyze_worker = AnalyzeWorker(
             self.files_to_analyze, categories, self.ollama,
             self.metadata_extractor, self.content_reader, self.ocr,
-            self.db, use_ai=use_ai
+            self.db, use_ai=use_ai, category_definitions=definitions,
+            lookup_enabled=self.config.get("book_lookup", {}).get("external_enabled", False),
+            calibre_settings=self.config.get("calibre", {}),
         )
         self.analyze_worker.progress.connect(self._on_progress)
         self.analyze_worker.file_analyzed.connect(self._on_file_analyzed)
@@ -474,17 +499,179 @@ class AnalyzeView(QWidget):
         self.progress_bar.setMaximum(total)
         self.progress_bar.setValue(current)
 
-    def _on_file_analyzed(self, file_path: str, category: str):
-        """Add a result to the preview table."""
+    def _on_file_analyzed(self, file_path: str, category: str,
+                          suggestion: str, reason: str, calibre_status: str):
+        """Show the proposed book category separately from its unconfirmed category."""
         row = self.preview_table.rowCount()
         self.preview_table.insertRow(row)
         self.preview_table.setItem(row, 0, QTableWidgetItem(Path(file_path).name))
         self.preview_table.setItem(row, 1, QTableWidgetItem(file_path))
-        self.preview_table.setItem(row, 2, QTableWidgetItem(category))
-        self.preview_table.setItem(row, 3, QTableWidgetItem("—"))
+        parent, child = split_category(category)
+        self.preview_table.setItem(row, 2, QTableWidgetItem(parent))
+        self.preview_table.setItem(row, 3, QTableWidgetItem(child or ""))
+        self.preview_table.setItem(row, 4, QTableWidgetItem(suggestion))
+        reason_item = QTableWidgetItem(reason)
+        reason_item.setToolTip(reason)
+        self.preview_table.setItem(row, 5, reason_item)
+        self.preview_table.setItem(row, 6, QTableWidgetItem(calibre_status))
 
     def _on_status(self, msg: str):
         self.status_label.setText(msg)
+
+    def _selected_review_file(self):
+        """Return the selected result row and source file, if analysis is idle."""
+        if self.analyze_worker and self.analyze_worker.isRunning():
+            QMessageBox.information(self, "Analysis Running",
+                                    "Finish analysis before editing classifications.")
+            return None
+        row = self.preview_table.currentRow()
+        if row < 0:
+            QMessageBox.information(self, "Select a Book",
+                                    "Select a row in the analysis preview first.")
+            return None
+        cell = self.preview_table.item(row, 1)
+        return (row, cell.text()) if cell else None
+
+    def _approve_category(self, row: int, file_path: str, label: str):
+        """Approve the exact path and synchronise the DB and Organize preview."""
+        definitions = load_category_definitions(
+            Path(__file__).parent.parent / "config" / "categories.json", self.db
+        )
+        try:
+            target = normalise_category(label)
+        except ValueError as exc:
+            QMessageBox.warning(self, "Invalid Category", str(exc))
+            return
+        if target not in {c["name"] for c in definitions} or target == NEEDS_REVIEW:
+            QMessageBox.warning(self, "Unknown Category",
+                                "Create the category in the application before assigning it.")
+            return
+        record = self.db.get_file_by_path(file_path)
+        if record is None:
+            QMessageBox.warning(self, "Missing Record",
+                                "Scan and analyse the file again before assigning it.")
+            return
+        try:
+            existing_meta = json.loads(record.get("metadata_json") or "{}")
+            calibre_state = (existing_meta.get("calibre") or {}).get("status")
+        except (ValueError, TypeError, AttributeError):
+            calibre_state = None
+        if calibre_state in ("duplicate", "imported"):
+            QMessageBox.information(
+                self, "Calibre Managed",
+                "This ebook is already in Calibre or was just imported. "
+                "The source file remains in Needs Review and will not be moved."
+            )
+            return
+        record.update(category_fields(target))
+        try:
+            audit = json.loads(record.get("analyzed_at") or "{}")
+        except (ValueError, TypeError):
+            audit = {}
+        audit.update({
+            "method": "manual approval",
+            "requires_review": False,
+            "suggested_category": None,
+            "reason": "Category confirmed by user",
+        })
+        record["analyzed_at"] = json.dumps(audit)
+        self.db.upsert_file(record)
+        for file_data in self.files:
+            if file_data.get("file_path") == file_path:
+                file_data.update(category_fields(target))
+                file_data["analyzed_at"] = record["analyzed_at"]
+        parent, child = split_category(target)
+        self.preview_table.item(row, 2).setText(parent)
+        self.preview_table.item(row, 3).setText(child or "")
+        self.preview_table.item(row, 4).setText("")
+        self.preview_table.item(row, 5).setText("Category confirmed by user")
+        self._current_results[file_path] = target
+        self.analysis_complete.emit(dict(self._current_results))
+        self.status_label.setText(f"Assigned {Path(file_path).name} to {target}")
+
+    def _accept_suggestion(self):
+        selection = self._selected_review_file()
+        if not selection:
+            return
+        row, file_path = selection
+        current = self.preview_table.item(row, 2).text()
+        suggestion = self.preview_table.item(row, 4).text().strip()
+        if current != NEEDS_REVIEW or not suggestion:
+            QMessageBox.information(self, "No Pending Suggestion",
+                                    "Select a Needs Review row with a proposed category.")
+            return
+        self._approve_category(row, file_path, suggestion)
+
+    def _assign_existing_category(self):
+        selection = self._selected_review_file()
+        if not selection:
+            return
+        row, file_path = selection
+        definitions = load_category_definitions(
+            Path(__file__).parent.parent / "config" / "categories.json", self.db
+        )
+        choices = sorted(c["name"] for c in definitions if c["name"] != NEEDS_REVIEW)
+        label, ok = QInputDialog.getItem(
+            self, "Assign Category", "Category / Subcategory:", choices, 0, False
+        )
+        if ok and label:
+            self._approve_category(row, file_path, label)
+
+    def _create_category_from_review(self):
+        """Create a new category from a review result, optionally assigning it."""
+        selection = self._selected_review_file()
+        if not selection:
+            return
+        row, file_path = selection
+        path = Path(__file__).parent.parent / "config" / "categories.json"
+        definitions = load_category_definitions(path, self.db)
+        proposed = self.preview_table.item(row, 4).text().strip()
+        proposed_parent, proposed_child = split_category(proposed) if proposed else ("", None)
+        parents = sorted({
+            split_category(c["name"])[0] for c in definitions
+            if c["name"] not in (NEEDS_REVIEW, "Miscellaneous")
+        })
+        initial_index = parents.index(proposed_parent) if proposed_parent in parents else 0
+        parent, ok = QInputDialog.getItem(
+            self, "Add Category", "Parent category (or type a new one):",
+            parents, initial_index, True
+        )
+        if not ok:
+            return
+        child, ok = QInputDialog.getText(
+            self, "Add Subcategory", "Subcategory (optional):",
+            text=proposed_child or ""
+        )
+        if not ok:
+            return
+        try:
+            name = category_key(parent, child.strip() or None)
+        except ValueError as exc:
+            QMessageBox.warning(self, "Invalid Category", str(exc))
+            return
+        if name in {c["name"] for c in definitions}:
+            QMessageBox.information(self, "Category Exists",
+                                    "That category already exists. Use Assign Existing.")
+            return
+        words, ok = QInputDialog.getText(
+            self, "Category Keywords", "Keywords (comma-separated):",
+            text=child.strip() or parent.strip()
+        )
+        if not ok:
+            return
+        extensions = [".pdf", ".epub"] if Path(file_path).suffix.lower() in (".pdf", ".epub") else [
+            Path(file_path).suffix.lower()
+        ]
+        self.db.add_custom_category(
+            name, extensions, [word.strip() for word in words.split(",") if word.strip()]
+        )
+        if QMessageBox.question(
+            self, "Assign New Category",
+            f"Created '{name}'. Assign the selected file to this category?"
+        ) == QMessageBox.Yes:
+            self._approve_category(row, file_path, name)
+        else:
+            self.status_label.setText(f"Created category {name}")
 
     def _on_finished(self, results: dict):
         """Handle analysis completion."""
@@ -493,4 +680,5 @@ class AnalyzeView(QWidget):
         self.cancel_btn.setEnabled(False)
         self.status_label.setText(f"Analysis complete: {len(results)} files classified")
 
-        self.analysis_complete.emit(results)
+        self._current_results = dict(results)
+        self.analysis_complete.emit(dict(self._current_results))

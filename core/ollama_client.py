@@ -205,7 +205,8 @@ class OllamaClient:
         return None
 
     def chat(self, messages: list[dict], stream: bool = False,
-             use_json_format: bool = True, num_predict: int = None) -> Optional[str]:
+             use_json_format: bool = True, num_predict: int = None,
+             think: Optional[bool] = None) -> Optional[str]:
         """Send a chat request — routes to local Ollama or cloud API.
 
         Args:
@@ -217,10 +218,27 @@ class OllamaClient:
         """
         if self.is_cloud:
             return self._chat_cloud(messages, use_json_format, num_predict)
-        return self._chat_local(messages, stream, use_json_format, num_predict)
+        return self._chat_local(messages, stream, use_json_format, num_predict, think)
+
+    def test_chat(self, message: str) -> Optional[str]:
+        """Test normal conversation, never JSON-mode classification.
+
+        Qwen3 reasoning can consume a small token budget without returning
+        visible content. Disable thinking for local Qwen3 variants and allow
+        a sufficient response budget for a short human-readable answer.
+        """
+        model_name = self.cloud_model if self.is_cloud else self.model
+        no_thinking = not self.is_cloud and model_name.lower().startswith("qwen3")
+        return self.chat(
+            [{"role": "user", "content": message}],
+            use_json_format=False,
+            num_predict=max(768, self.cloud_max_tokens if self.is_cloud else self.max_tokens),
+            think=False if no_thinking else None,
+        )
 
     def _chat_local(self, messages: list[dict], stream: bool,
-                    use_json_format: bool, num_predict: int) -> Optional[str]:
+                    use_json_format: bool, num_predict: int,
+                    think: Optional[bool] = None) -> Optional[str]:
         """Chat via local Ollama API."""
         payload = {
             "model": self.model,
@@ -233,6 +251,8 @@ class OllamaClient:
         }
         if use_json_format:
             payload["format"] = "json"
+        if think is not None:
+            payload["think"] = think
         try:
             resp = requests.post(
                 f"{self.server_url}/api/chat",
@@ -245,8 +265,11 @@ class OllamaClient:
                 content = message.get("content", "")
                 if not content:
                     self.logger.warning(
-                        f"Ollama returned empty content. "
-                        f"Response: {str(data)[:300]}"
+                        "Ollama model %s returned no answer (done_reason=%s, "
+                        "eval_count=%s, thinking_characters=%s). "
+                        "Check model selection and thinking/token settings.",
+                        self.model, data.get("done_reason"), data.get("eval_count"),
+                        len(message.get("thinking") or "")
                     )
                 return content
             else:
@@ -316,7 +339,8 @@ class OllamaClient:
     # ── classification ──────────────────────────────────────────────
 
     def classify_file(self, file_info: dict, categories: list[str],
-                      content_summary: str = None) -> Optional[str]:
+                      content_summary: str = None,
+                      category_details: list[dict] = None) -> Optional[str]:
         """Classify a file into one of the given categories."""
         categories_str = ", ".join(categories)
         file_name = file_info.get("file_name", "unknown")
@@ -328,17 +352,38 @@ class OllamaClient:
             f"Extension: {extension}",
         ]
         if metadata:
-            prompt_parts.append(f"Metadata: {json.dumps(metadata, indent=2)}")
+            prompt_parts.append(f"Metadata: {json.dumps(metadata, indent=2, default=str)}")
         if content_summary:
-            prompt_parts.append(f"Content summary: {content_summary[:500]}")
+            prompt_parts.append(f"Document evidence: {content_summary[:7000]}")
 
-        prompt_parts.append(f"\nAvailable categories: {categories_str}")
+        if category_details:
+            descriptions = []
+            for item in category_details:
+                name = item.get("name", "")
+                if name in categories:
+                    keywords = ", ".join(str(k) for k in item.get("keywords", [])[:12])
+                    description = item.get("description", "")
+                    descriptions.append(
+                        f"- {name}: {description} Keywords: {keywords}".strip()
+                    )
+            prompt_parts.append("Category definitions:\n" + "\n".join(descriptions))
+        else:
+            prompt_parts.append(f"\nAvailable categories: {categories_str}")
         prompt_parts.append(
             "\nYou are a professional file organizer. Based on the filename, extension, "
             "metadata, and available content, return only the best category from the "
             "configured category list. If uncertain, return Miscellaneous."
         )
         prompt_parts.append('\nReturn JSON only: {"category": "<category_name>"}')
+
+        prompt_parts.append(
+            "Classify documents primarily by their subject matter, "
+            "not their extension. Prefer specific RPG, software, "
+            "game development or fiction categories over generic "
+            "Documents and eBooks categories. "
+            "Only use generic categories when no specific "
+            "category is appropriate."
+        )
 
         prompt = "\n".join(prompt_parts)
         system_msg = (
@@ -352,23 +397,42 @@ class OllamaClient:
             {"role": "user", "content": prompt},
         ]
 
-        response = self.chat(messages)
-        if response:
+        # Older Ollama versions may ignore format=json for Qwen3.5 with
+        # thinking disabled, so request a plain answer and parse its JSON.
+        qwen35_local = not self.is_cloud and self.model.lower().startswith("qwen3.5")
+        response = self.chat(
+            messages, use_json_format=not qwen35_local,
+            num_predict=max(768, self.max_tokens),
+            think=False if qwen35_local else None,
+        )
+        if not response:
+            self.logger.warning("Classification returned no answer for %s using model %s",
+                                file_name, self.cloud_model if self.is_cloud else self.model)
+            return None
+
+        # Accept structured JSON surrounded by markdown fences or a preamble,
+        # but never classify merely because the text contains a category name.
+        parsed_category = None
+        decoder = json.JSONDecoder()
+        for index, char in enumerate(response):
+            if char != "{":
+                continue
             try:
-                result = json.loads(response.strip())
-                category = result.get("category", "").strip()
-                if category in categories:
-                    return category
-                for cat in categories:
-                    if cat.lower() == category.lower():
-                        return cat
-                return "Miscellaneous"
+                parsed, _ = decoder.raw_decode(response[index:])
+                if isinstance(parsed, dict) and "category" in parsed:
+                    parsed_category = str(parsed.get("category") or "").strip()
+                    break
             except json.JSONDecodeError:
-                response_clean = response.strip().strip('"').strip("'")
-                for cat in categories:
-                    if cat.lower() in response_clean.lower():
-                        return cat
-                return "Miscellaneous"
+                continue
+        if parsed_category is None:
+            self.logger.warning("Invalid classification JSON for %s (model=%s, preview=%r)",
+                                file_name, self.model, response[:160])
+            return None
+        for candidate in categories:
+            if candidate.casefold() == parsed_category.casefold():
+                return candidate
+        self.logger.warning("Unrecognised category %r from model for %s",
+                            parsed_category, file_name)
         return None
 
     def batch_classify(self, files: list[dict], categories: list[str],

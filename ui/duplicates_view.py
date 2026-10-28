@@ -231,6 +231,55 @@ class DuplicatesView(QWidget):
         results_group.setLayout(results_layout)
         layout.addWidget(results_group)
 
+        # Logical duplicates already present in Calibre are intentionally
+        # separate from byte-identical hash duplicate groups. No move/delete
+        # controls are provided for these rows.
+        calibre_group = QGroupBox("Already in Calibre (read-only)")
+        calibre_layout = QVBoxLayout()
+        refresh_calibre = QPushButton("Refresh Calibre Matches")
+        refresh_calibre.clicked.connect(self._refresh_calibre_duplicates)
+        calibre_layout.addWidget(refresh_calibre)
+        self.calibre_matches = QTableWidget()
+        self.calibre_matches.setColumnCount(3)
+        self.calibre_matches.setHorizontalHeaderLabels([
+            "Ebook", "Calibre book ID", "Original location"
+        ])
+        self.calibre_matches.horizontalHeader().setSectionResizeMode(
+            0, QHeaderView.Stretch
+        )
+        self.calibre_matches.horizontalHeader().setSectionResizeMode(
+            1, QHeaderView.ResizeToContents
+        )
+        self.calibre_matches.horizontalHeader().setSectionResizeMode(
+            2, QHeaderView.Stretch
+        )
+        self.calibre_matches.setMaximumHeight(230)
+        calibre_layout.addWidget(self.calibre_matches)
+        calibre_group.setLayout(calibre_layout)
+        layout.addWidget(calibre_group)
+        self._refresh_calibre_duplicates()
+
+    def _refresh_calibre_duplicates(self):
+        """List recorded Calibre matches without adding them to move groups."""
+        rows = [
+            f for f in self.db.get_all_files()
+            if f.get("is_duplicate")
+            and str(f.get("duplicate_of") or "").startswith("calibre:book:")
+            and not f.get("is_deleted")
+        ][:500]
+        self.calibre_matches.setRowCount(len(rows))
+        for row, record in enumerate(rows):
+            self.calibre_matches.setItem(
+                row, 0, QTableWidgetItem(record.get("file_name") or "")
+            )
+            self.calibre_matches.setItem(
+                row, 1,
+                QTableWidgetItem(str(record.get("duplicate_of") or "").rsplit(":", 1)[-1])
+            )
+            self.calibre_matches.setItem(
+                row, 2, QTableWidgetItem(record.get("file_path") or "")
+            )
+
     def _find_duplicates(self):
         """Start duplicate detection."""
         files = self.db.get_all_files()

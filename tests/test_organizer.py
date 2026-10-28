@@ -173,3 +173,56 @@ class TestFileOrganizer:
         assert all(r["success"] for r in results)
         assert (tmp_path / "output" / "Documents-AI" / "doc1.txt").exists()
         assert (tmp_path / "output" / "Pictures-AI" / "image1.jpg").exists()
+
+
+
+def test_hierarchical_organize_moves_into_child_folder(organizer, temp_source_dir, tmp_path):
+    organizer.output_base = str(tmp_path / "output")
+    source = Path(temp_source_dir) / "doc1.txt"
+
+    ok, destination, operation = organizer.move_file(
+        str(source), "RPG / Game Master Resources"
+    )
+    assert ok, destination
+    assert operation is not None
+    assert Path(destination) == (
+        tmp_path / "output" / "RPG-AI" / "Game Master Resources" / "doc1.txt"
+    )
+    record = organizer.db.get_file_by_path(destination)
+    assert record["category"] == "RPG"
+    assert record["subcategory"] == "Game Master Resources"
+    assert not source.exists()
+
+
+def test_legacy_category_move_uses_same_hierarchical_path(organizer, temp_source_dir, tmp_path):
+    organizer.output_base = str(tmp_path / "output")
+    source = Path(temp_source_dir) / "doc1.txt"
+    ok, destination, operation = organizer.move_file(
+        str(source), "Software - Web Development"
+    )
+    assert ok, destination
+    assert Path(destination).parent == tmp_path / "output" / "Software-AI" / "Web Development"
+    saved = organizer.db.get_file_by_path(destination)
+    assert saved["category"] == "Software"
+    assert saved["subcategory"] == "Web Development"
+
+
+def test_unsafe_subcategory_never_moves_file(organizer, temp_source_dir, tmp_path):
+    organizer.output_base = str(tmp_path / "output")
+    source = Path(temp_source_dir) / "doc1.txt"
+    ok, message, _ = organizer.move_file(str(source), "RPG / ../../outside")
+    assert not ok
+    assert "Invalid category" in message
+    assert source.exists()
+
+
+def test_review_file_never_moves_despite_suggestion(organizer, temp_source_dir, tmp_path):
+    organizer.output_base = str(tmp_path / "output")
+    source = Path(temp_source_dir) / "doc1.txt"
+    ok, message, _ = organizer.move_file(
+        str(source), "Needs Review",
+        {"suggested_category": "RPG / Dungeons & Dragons"}
+    )
+    assert not ok
+    assert source.exists()
+    assert not (tmp_path / "output").exists()

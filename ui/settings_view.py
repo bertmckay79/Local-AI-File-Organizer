@@ -4,6 +4,7 @@ Allows configuration of all application settings.
 """
 
 import json
+from copy import copy
 from pathlib import Path
 
 from PySide6.QtWidgets import (
@@ -17,6 +18,10 @@ from PySide6.QtCore import Qt, Signal, QThread
 from utils.config import ConfigManager
 from core.ollama_client import OllamaClient
 from database.db_manager import DatabaseManager
+from core.document_classifier import load_category_definitions
+from core.category_hierarchy import (
+    category_key, normalise_category, split_category, validate_segment
+)
 
 
 class SettingsView(QWidget):
@@ -167,9 +172,9 @@ class SettingsView(QWidget):
         # ── Geocoding Settings ──
         geo_group = QGroupBox("📍 GPS Geocoding Provider")
         geo_layout = QFormLayout(geo_group)
-        ai_layout.addWidget(geo_group)
+        layout.addWidget(geo_group)
 
-        geo_cfg = config.get("geocoding", {})
+        geo_cfg = self.config_manager.config.get("geocoding", {})
         self.geo_provider = QComboBox()
         self.geo_provider.addItem("Nominatim (Free, OpenStreetMap)", "nominatim")
         self.geo_provider.addItem("BigDataCloud (Free, no key)", "bigdatacloud")
@@ -220,7 +225,7 @@ class SettingsView(QWidget):
         # ── AI Chat Test Box ──
         chat_group = QGroupBox("💬 Test AI Chat")
         chat_layout = QVBoxLayout(chat_group)
-        ai_layout.addWidget(chat_group)
+        layout.addWidget(chat_group)
 
         chat_help = QLabel(
             "Type a message to test if your AI model is working.\n"
@@ -467,16 +472,8 @@ class SettingsView(QWidget):
 
     def _populate_org_date_struct_table(self):
         """Populate date structure table in Settings."""
-        import json as _json
-        from pathlib import Path as _Path
-        cat_path = _Path(__file__).parent.parent / "config" / "categories.json"
-        with open(cat_path, "r") as _f:
-            cats = [c["name"] for c in _json.load(_f)["categories"]]
-        try:
-            custom = self.db.get_custom_categories()
-            cats.extend(c["name"] for c in custom if c["name"] not in cats)
-        except Exception:
-            pass
+        cat_path = Path(__file__).parent.parent / "config" / "categories.json"
+        cats = [c["name"] for c in load_category_definitions(cat_path, self.db)]
 
         saved = self.config_manager.config.get("organize", {}).get("date_structures", {})
         self.org_date_struct_table.setRowCount(len(cats))
@@ -516,11 +513,14 @@ class SettingsView(QWidget):
         layout.addWidget(QLabel("Configured Categories:"))
 
         self.categories_table = QTableWidget()
-        self.categories_table.setColumnCount(3)
-        self.categories_table.setHorizontalHeaderLabels(["Category", "Extensions", "Keywords"])
+        self.categories_table.setColumnCount(4)
+        self.categories_table.setHorizontalHeaderLabels(
+            ["Category", "Subcategory", "Extensions", "Keywords"]
+        )
         self.categories_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        self.categories_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        self.categories_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
         self.categories_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
+        self.categories_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.Stretch)
         layout.addWidget(self.categories_table)
 
         self._load_categories()
@@ -528,7 +528,7 @@ class SettingsView(QWidget):
         # Custom category buttons
         btn_layout = QHBoxLayout()
 
-        add_btn = QPushButton("➕ Add Custom Category")
+        add_btn = QPushButton("➕ Add Category / Subcategory")
         add_btn.clicked.connect(self._add_custom_category)
         btn_layout.addWidget(add_btn)
 
@@ -559,6 +559,62 @@ class SettingsView(QWidget):
         self.ocr_pages.setRange(1, 100)
         self.ocr_pages.setValue(ocr.get("max_pages", 10))
         layout.addRow("OCR Max Pages:", self.ocr_pages)
+
+        self.book_lookup_enabled = QCheckBox(
+            "Suggest categories using Open Library ISBN/title search (online)"
+        )
+        self.book_lookup_enabled.setChecked(
+            self.config_manager.config.get("book_lookup", {}).get("external_enabled", False)
+        )
+        self.book_lookup_enabled.setToolTip(
+            "For Needs Review books only: send the ISBN or inferred title "
+            "to Open Library. No full book text is uploaded. Off by default."
+        )
+        layout.addRow("", self.book_lookup_enabled)
+
+        calibre = self.config_manager.config.get("calibre", {})
+        layout.addRow(QLabel("Calibre ebook integration (EPUB, MOBI, AZW3, etc.)"))
+        self.calibre_enabled = QCheckBox(
+            "Check ebooks against a local Calibre library during analysis"
+        )
+        self.calibre_enabled.setChecked(calibre.get("enabled", False))
+        layout.addRow("", self.calibre_enabled)
+
+        calibre_row = QHBoxLayout()
+        self.calibre_library = QLineEdit(calibre.get("library_path", ""))
+        self.calibre_library.setPlaceholderText("Library folder containing metadata.db")
+        calibre_row.addWidget(self.calibre_library)
+        calibre_browse = QPushButton("Browse...")
+        calibre_browse.clicked.connect(lambda: self._browse_folder(self.calibre_library))
+        calibre_row.addWidget(calibre_browse)
+        layout.addRow("Calibre library:", calibre_row)
+
+        self.calibre_cli = QLineEdit(calibre.get("cli_path", ""))
+        self.calibre_cli.setPlaceholderText(
+            "Optional Calibre program folder; leave blank if calibredb is in PATH"
+        )
+        cli_row = QHBoxLayout()
+        cli_row.addWidget(self.calibre_cli)
+        cli_browse = QPushButton("Browse...")
+        cli_browse.clicked.connect(lambda: self._browse_folder(self.calibre_cli))
+        cli_row.addWidget(cli_browse)
+        layout.addRow("Calibre tools:", cli_row)
+
+        self.calibre_import = QCheckBox(
+            "Import missing ebooks into Calibre (source file is not deleted)"
+        )
+        self.calibre_import.setChecked(calibre.get("import_missing", False))
+        layout.addRow("", self.calibre_import)
+
+        self.calibre_metadata = QCheckBox(
+            "After import, download metadata using Calibre's online sources"
+        )
+        self.calibre_metadata.setChecked(calibre.get("fetch_metadata", False))
+        self.calibre_metadata.setToolTip(
+            "Calibre may send an ISBN/title/author to online metadata providers. "
+            "Downloaded metadata is applied only to the imported Calibre record."
+        )
+        layout.addRow("", self.calibre_metadata)
 
         self.empty_folders = QCheckBox("Empty folder detection")
         self.empty_folders.setChecked(adv.get("empty_folder_detection", True))
@@ -632,53 +688,85 @@ class SettingsView(QWidget):
         return tab
 
     def _load_categories(self):
-        """Load categories into the table."""
-        cat_path = Path(__file__).parent.parent / "config" / "categories.json"
-        with open(cat_path, "r") as f:
-            cat_config = json.load(f)
-
-        categories = cat_config["categories"]
-        custom = self.db.get_custom_categories()
-        for c in custom:
-            categories.append({"name": c["name"], "extensions": c.get("extensions", []),
-                               "keywords": c.get("keywords", [])})
-
-        self.categories_table.setRowCount(len(categories))
-        for i, cat in enumerate(categories):
-            self.categories_table.setItem(i, 0, QTableWidgetItem(cat["name"]))
-            self.categories_table.setItem(i, 1, QTableWidgetItem(", ".join(cat["extensions"])))
-            self.categories_table.setItem(i, 2, QTableWidgetItem(", ".join(cat["keywords"])))
+        """Display the two-level category tree and track custom-only rows."""
+        path = Path(__file__).parent.parent / "config" / "categories.json"
+        definitions = load_category_definitions(path, self.db)
+        custom_keys = {
+            normalise_category(c["name"]) for c in self.db.get_custom_categories()
+        }
+        self.categories_table.setRowCount(len(definitions))
+        for row, definition in enumerate(definitions):
+            parent, leaf = split_category(definition["name"])
+            item = QTableWidgetItem(parent)
+            item.setData(Qt.UserRole, definition["name"])
+            item.setData(Qt.UserRole + 1, definition["name"] in custom_keys)
+            self.categories_table.setItem(row, 0, item)
+            self.categories_table.setItem(row, 1, QTableWidgetItem(leaf or ""))
+            self.categories_table.setItem(
+                row, 2, QTableWidgetItem(", ".join(definition.get("extensions") or []))
+            )
+            self.categories_table.setItem(
+                row, 3, QTableWidgetItem(", ".join(definition.get("keywords") or []))
+            )
 
     def _add_custom_category(self):
-        """Add a custom category."""
-        name, ok = QInputDialog.getText(self, "Custom Category", "Category name:")
-        if not ok or not name:
+        """Add a top-level category or an optional child under an existing parent."""
+        path = Path(__file__).parent.parent / "config" / "categories.json"
+        defs = load_category_definitions(path, self.db)
+        parents = sorted({split_category(c["name"])[0] for c in defs
+                          if c["name"] not in ("Needs Review", "Miscellaneous")})
+        parent, ok = QInputDialog.getItem(
+            self, "New Category", "Category (select existing or type new):",
+            parents, 0, True
+        )
+        if not ok:
             return
-
+        sub, ok = QInputDialog.getText(
+            self, "Optional Subcategory", "Subcategory (leave blank for top-level):"
+        )
+        if not ok:
+            return
+        try:
+            name = category_key(parent, sub.strip() or None)
+        except ValueError as exc:
+            QMessageBox.warning(self, "Invalid Category", str(exc))
+            return
+        if name in {c["name"] for c in defs}:
+            QMessageBox.warning(self, "Exists", f"{name} already exists.")
+            return
+        default_ext = ".pdf,.epub" if sub.strip() else ""
         exts, ok = QInputDialog.getText(
-            self, "Extensions", "Extensions (comma-separated, e.g. .xyz,.abc):"
+            self, "Extensions", "Extensions (comma-separated):", text=default_ext
         )
         if not ok:
             return
-
         keywords, ok = QInputDialog.getText(
-            self, "Keywords", "Keywords (comma-separated):"
+            self, "Keywords", "Subject keywords (comma-separated):"
         )
         if not ok:
             return
-
-        ext_list = [e.strip() for e in exts.split(",") if e.strip()]
-        kw_list = [k.strip() for k in keywords.split(",") if k.strip()]
-
+        ext_list = [
+            "." + x.strip().lower().lstrip(".") for x in exts.split(",")
+            if x.strip()
+        ]
+        kw_list = [x.strip() for x in keywords.split(",") if x.strip()]
         self.db.add_custom_category(name, ext_list, kw_list)
         self._load_categories()
 
     def _delete_custom_category(self):
-        """Delete a custom category."""
         row = self.categories_table.currentRow()
-        if row < 0:
+        item = self.categories_table.item(row, 0) if row >= 0 else None
+        if not item:
             return
-        name = self.categories_table.item(row, 0).text()
+        if not item.data(Qt.UserRole + 1):
+            QMessageBox.information(self, "Built-in Category",
+                                    "Only custom categories can be deleted.")
+            return
+        name = item.data(Qt.UserRole)
+        if QMessageBox.question(
+            self, "Delete Category", f"Delete custom category '{name}'?"
+        ) != QMessageBox.Yes:
+            return
         self.db.delete_custom_category(name)
         self._load_categories()
 
@@ -739,46 +827,83 @@ class SettingsView(QWidget):
             f"Models: {', '.join(models[:15])}" + ("..." if len(models) > 15 else ""))
 
     def _send_chat_test(self):
-        """Send a test message to Ollama and show the response."""
+        """Test the provider and model currently selected in Settings."""
         msg = self.chat_input.text().strip()
         if not msg:
             return
-        if not self.ollama or not self.ollama.is_available():
+
+        # Test unsaved settings without mutating the AI client used by
+        # the Analyze and Quick Organize tabs.
+        client = copy(self.ollama)
+        provider = self.ai_provider.currentData()
+        if provider == "cloud":
+            api_key = self.cloud_api_key.text().strip()
+            if not api_key:
+                self.chat_display.append("⚠️ Enter a cloud API key before testing.")
+                return
+            client.update_settings(
+                ai_provider="cloud",
+                api_key=api_key,
+                base_url=self.cloud_base_url.text().strip(),
+                cloud_timeout=self.cloud_timeout.value(),
+                cloud_temperature=self.cloud_temp.value(),
+                cloud_max_tokens=self.cloud_max_tokens.value(),
+            )
+            client.cloud_model = self.cloud_model.text().strip()
+            model_name = client.cloud_model
+        else:
+            client.update_settings(
+                ai_provider="local",
+                server_url=self.ai_url.text().strip(),
+                model=self.ai_model.currentText().strip(),
+                timeout=self.ai_timeout.value(),
+                temperature=self.ai_temp.value(),
+                max_tokens=self.ai_max_tokens.value(),
+            )
+            model_name = client.model
+
+        if not model_name:
+            self.chat_display.append("⚠️ Select a model before testing.")
+            return
+
+        if not client.is_available():
             self.chat_display.append(
-                f"\n⚠️ Ollama is not running. Start Ollama first.\n"
-                f"   Server: {self.ai_url.text().strip()}"
+                f"⚠️ AI provider is unavailable for model {model_name}. "
+                "Check the connection, credentials and server address."
             )
             return
 
-        self.chat_display.append(f"\n🧑 You: {msg}")
+        self.chat_display.append(f"\n🧑 You: {msg}\n🔧 Model: {model_name}")
         self.chat_input.clear()
         self.chat_send_btn.setEnabled(False)
-        self.chat_send_btn.setText("Thinking...")
+        self.chat_send_btn.setText("Sending...")
 
-        # Run in background thread to avoid freezing UI
+        # Keep inference off the UI thread.
         class ChatWorker(QThread):
             response_ready = Signal(str)
             error_signal = Signal(str)
 
-            def __init__(self, ollama, message):
+            def __init__(self, ollama, message, model_name):
                 super().__init__()
                 self.ollama = ollama
                 self.message = message
+                self.model_name = model_name
 
             def run(self):
                 try:
-                    response = self.ollama.chat(
-                        [{"role": "user", "content": self.message}],
-                        num_predict=200,
-                    )
-                    if response:
+                    response = self.ollama.test_chat(self.message)
+                    if response and response.strip():
                         self.response_ready.emit(response.strip())
                     else:
-                        self.error_signal.emit("AI returned empty response")
+                        self.error_signal.emit(
+                            f"No visible response from {self.model_name}. "
+                            "Check the Logs tab for Ollama response details; "
+                            "the selected model may not be generating an answer."
+                        )
                 except Exception as e:
                     self.error_signal.emit(str(e))
 
-        self._chat_worker = ChatWorker(self.ollama, msg)
+        self._chat_worker = ChatWorker(client, msg, model_name)
         self._chat_worker.response_ready.connect(self._chat_response)
         self._chat_worker.error_signal.connect(self._chat_error)
         self._chat_worker.start()
@@ -923,6 +1048,15 @@ class SettingsView(QWidget):
         config["ocr"]["enabled"] = self.ocr_enabled.isChecked()
         config["ocr"]["language"] = self.ocr_lang.text().strip()
         config["ocr"]["max_pages"] = self.ocr_pages.value()
+        config.setdefault("book_lookup", {})["external_enabled"] = (
+            self.book_lookup_enabled.isChecked()
+        )
+        calibre = config.setdefault("calibre", {})
+        calibre["enabled"] = self.calibre_enabled.isChecked()
+        calibre["library_path"] = self.calibre_library.text().strip()
+        calibre["cli_path"] = self.calibre_cli.text().strip()
+        calibre["import_missing"] = self.calibre_import.isChecked()
+        calibre["fetch_metadata"] = self.calibre_metadata.isChecked()
         config["advanced"]["empty_folder_detection"] = self.empty_folders.isChecked()
         config["advanced"]["large_file_threshold_mb"] = self.large_threshold.value()
         config["advanced"]["disk_usage_analysis"] = self.disk_analysis.isChecked()
@@ -951,9 +1085,19 @@ class SettingsView(QWidget):
             max_tokens=config["ollama"]["max_tokens"],
         )
 
-        self.config_manager.save(config)
+        try:
+            self.config_manager.save(config)
+        except (OSError, ValueError, TypeError) as exc:
+            QMessageBox.critical(
+                self, "Settings Not Saved",
+                f"Could not save settings to:\n{self.config_manager.config_path}\n\n{exc}"
+            )
+            return
         self.settings_changed.emit(config)
-        QMessageBox.information(self, "Settings Saved", "All settings have been saved.")
+        QMessageBox.information(
+            self, "Settings Saved",
+            f"Settings saved to:\n{self.config_manager.config_path}"
+        )
 
     def _reset_defaults(self):
         """Reset to default configuration."""
@@ -963,9 +1107,14 @@ class SettingsView(QWidget):
             QMessageBox.Yes | QMessageBox.No,
         )
         if reply == QMessageBox.Yes:
-            import os
-            user_config = Path(__file__).parent.parent / "config" / "user_config.json"
-            if user_config.exists():
-                os.remove(str(user_config))
-            self.config_manager.load()
-            QMessageBox.information(self, "Reset Complete", "Settings reset to defaults.")
+            try:
+                defaults = self.config_manager.reset()
+            except OSError as exc:
+                QMessageBox.critical(self, "Reset Failed", str(exc))
+                return
+            self.settings_changed.emit(defaults)
+            QMessageBox.information(
+                self, "Reset Complete",
+                "Default settings saved. Restart the application to refresh "
+                "all controls. Your categories and scanned-file database are preserved."
+            )

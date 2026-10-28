@@ -7,6 +7,7 @@ import logging
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from datetime import datetime
+from utils.storage import resolve_data_path
 
 
 class AppLogger:
@@ -29,7 +30,7 @@ class AppLogger:
         max_bytes = log_config.get("max_size_mb", 10) * 1024 * 1024
         backup_count = log_config.get("backup_count", 5)
 
-        log_path = Path(log_file)
+        log_path = resolve_data_path(log_file, "logs/organizer.log")
         log_path.parent.mkdir(parents=True, exist_ok=True)
 
         self.logger = logging.getLogger("file_organizer")

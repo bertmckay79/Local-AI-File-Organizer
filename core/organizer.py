@@ -12,6 +12,7 @@ from typing import Optional
 from database.db_manager import DatabaseManager
 from database.operations import OperationHistory, OperationType
 from utils.helpers import safe_move_file, get_unique_filename, get_photo_date, sanitize_filename
+from core.category_hierarchy import split_category, category_fields, category_key, REVIEW
 from utils.logger import get_logger
 
 
@@ -57,7 +58,14 @@ class FileOrganizer:
         if not self.output_base:
             return Path(file_path).parent if file_path else Path.cwd()
 
-        base = Path(self.output_base) / (sanitize_filename(category) + "-AI")
+        # Root keeps the -AI suffix for scan-exclusion compatibility.
+        # The child is a real directory, not part of the root folder name.
+        parent, child = split_category(category)
+        parent = category_key(parent)
+        child = category_key(child) if child else None
+        base = Path(self.output_base) / (sanitize_filename(parent) + "-AI")
+        if child:
+            base = base / sanitize_filename(child)
 
         # Camera maker+model combined subfolder (for images with EXIF data)
         # Path: Pictures-AI/Canon EOS_R5/2024/01/photo.jpg
@@ -77,7 +85,7 @@ class FileOrganizer:
                 base = base / " ".join(parts)
 
         # Per-category date structure
-        struct = self.date_structures.get(category, "none")
+        struct = self.date_structures.get(category, self.date_structures.get(parent, "none"))
 
         if struct != "none" and file_path:
             file_date = get_photo_date(Path(file_path))
@@ -97,6 +105,35 @@ class FileOrganizer:
         Move a single file to its category folder.
         Returns: (success, message, operation_id)
         """
+        if category == REVIEW:
+            return False, "Review required; file was not moved", None
+        # A Calibre import does not license moving/deleting the original
+        # ebook. Guard at the organizer layer, including after a manual
+        # category reassignment or an application restart.
+        record = self.db.get_file_by_path(src_path)
+        if record:
+            try:
+                details = json.loads(record.get("metadata_json") or "{}")
+                calibre_status = (details.get("calibre") or {}).get("status")
+            except (TypeError, ValueError, AttributeError):
+                calibre_status = None
+            if record.get("is_duplicate") and str(record.get("duplicate_of") or "").startswith("calibre:"):
+                return False, "Calibre duplicate; original file was not moved", None
+            if calibre_status in ("duplicate", "imported"):
+                return False, "Calibre-managed ebook; original file was not moved", None
+            try:
+                library = (details.get("calibre") or {}).get("library")
+                if library and src_path and Path(src_path).resolve().is_relative_to(
+                    Path(library).resolve()
+                ):
+                    return False, "Source is inside Calibre library; not moved", None
+            except (TypeError, ValueError, OSError, AttributeError):
+                pass
+        try:
+            fields = category_fields(category)
+            category = category_key(fields["category"], fields["subcategory"])
+        except ValueError as exc:
+            return False, f"Invalid category path: {exc}", None
         src = Path(src_path)
         if not src.exists():
             return False, f"Source file not found: {src_path}", None
@@ -144,7 +181,8 @@ class FileOrganizer:
                 "file_name": Path(result).name,
                 "extension": Path(result).suffix.lower(),
                 "size_bytes": file_size,
-                "category": category,
+                "category": fields["category"],
+                "subcategory": fields["subcategory"],
                 "scanned_at": datetime.now().isoformat(),
             }, commit=False)  # Batch: don't commit per file
 

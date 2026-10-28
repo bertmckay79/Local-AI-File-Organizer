@@ -21,6 +21,7 @@ class ScanView(QWidget):
 
     scan_complete = Signal(list, int)
     scan_progress = Signal(int, int)
+    paths_changed = Signal(list)
 
     def __init__(self, config: dict, db, ollama=None):
         super().__init__()
@@ -32,6 +33,9 @@ class ScanView(QWidget):
         self.scanned_files: list[dict] = []
         self._db_batch_count = 0
         self._init_ui()
+        for existing in self.config.get("scan", {}).get("recent_paths", []):
+            if isinstance(existing, str) and existing:
+                self.add_scan_path(existing, notify=False)
         # Check if Ollama is available and hide the banner if it is
         if self.ollama:
             QTimer.singleShot(1000, self._check_ai_status)
@@ -157,11 +161,13 @@ class ScanView(QWidget):
         results_group.setLayout(results_layout)
         layout.addWidget(results_group)
 
-    def add_scan_path(self, path: str):
-        """Add a scan path."""
+    def add_scan_path(self, path: str, notify: bool = True):
+        """Add a scan path and persist the selection across launches."""
         if path not in self.scan_paths:
             self.scan_paths.append(path)
             self.paths_list.addItem(path)
+            if notify:
+                self.paths_changed.emit(list(self.scan_paths))
 
     def _add_folder(self):
         """Open folder picker and add to scan list."""
@@ -175,6 +181,7 @@ class ScanView(QWidget):
         if row >= 0:
             self.paths_list.takeItem(row)
             self.scan_paths.pop(row)
+            self.paths_changed.emit(list(self.scan_paths))
 
     def _start_scan(self):
         """Start scanning selected folders."""

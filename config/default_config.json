@@ -30,7 +30,8 @@
       ".thumbs",
       ".lnk"
     ],
-    "incremental_indexing": true
+    "incremental_indexing": true,
+    "recent_paths": []
   },
   "organize": {
     "output_base": "",
@@ -49,13 +50,15 @@
       "Pictures": "year_month",
       "Videos": "year",
       "Music": "year"
-    }
+    },
+    "quick_scan_paths": []
   },
   "ui": {
     "theme": "dark",
     "window_width": 1400,
     "window_height": 900,
-    "remember_layout": true
+    "remember_layout": true,
+    "active_tab": 0
   },
   "scheduling": {
     "enabled": false,
@@ -105,5 +108,16 @@
     "geonames_user": "",
     "language": "en",
     "timeout": 10
+  },
+  "book_lookup": {
+    "external_enabled": false
+  },
+  "calibre": {
+    "enabled": false,
+    "library_path": "",
+    "cli_path": "",
+    "import_missing": false,
+    "fetch_metadata": false,
+    "timeout": 90
   }
 }
