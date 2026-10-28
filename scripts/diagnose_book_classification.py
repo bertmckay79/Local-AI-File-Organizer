@@ -160,6 +160,9 @@ def main(argv=None):
                 entry.update({
                     "category": decision.category, "reason": decision.reason,
                     "requires_review": decision.requires_review,
+                    "suggested_category": decision.suggested_category,
+                    "book_title": decision.book_title,
+                    "book_isbn": decision.book_isbn,
                 })
             except Exception as exc:
                 entry["error"] = f"{type(exc).__name__}: {exc}"
@@ -170,6 +173,8 @@ def main(argv=None):
         print("  Readable characters:", entry["evidence_characters"])
         print("  Category:", entry.get("category", "ERROR"))
         print("  Reason:", entry.get("reason", entry.get("error", "-")))
+        if entry.get("suggested_category"):
+            print("  Suggested category:", entry["suggested_category"])
         for call in entry.get("ollama_requests", []):
             print("  Ollama HTTP:", call.get("http_status", "failed"),
                   "output:", call.get("response_characters", 0),

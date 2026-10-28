@@ -226,3 +226,50 @@ def test_maker_book_classifies_on_subject_only_retry(monkeypatch):
     categories_on_retry = service.ollama.classify_file.call_args.args[1]
     assert "Maker & DIY" in categories_on_retry
     assert "eBooks" not in categories_on_retry
+
+
+def test_failed_book_gets_title_based_suggestion_without_automatic_category(monkeypatch):
+    monkeypatch.setattr(
+        "core.document_classifier.extract_pdf_evidence",
+        lambda p: "This is an edited collection of hands-on maker projects."
+    )
+    maker = {
+        "name": "Maker & DIY", "extensions": [".pdf", ".epub"],
+        "keywords": ["Book of Making", "electronics"],
+    }
+    service, book = classifier(None)
+    service.definitions = CATS + [maker]
+    service.category_names = [item["name"] for item in service.definitions]
+    book["file_name"] = "Book_of_Making_2025_Z-Library.pdf"
+    decision = service.classify(book)
+    assert decision.category == NEEDS_REVIEW
+    assert decision.requires_review is True
+    assert decision.suggested_category == "Maker & DIY"
+    assert "Suggested category: Maker & DIY" in decision.reason
+    assert decision.book_title == "Book of Making 2025"
+
+
+def test_external_book_lookup_disabled_by_default(monkeypatch):
+    import core.book_identifier as book_identifier
+    monkeypatch.setattr("core.document_classifier.extract_pdf_evidence", lambda p: "Game rules")
+    monkeypatch.setattr(book_identifier, "openlibrary_lookup",
+                        lambda identity: (_ for _ in ()).throw(
+                            AssertionError("External lookup should require opt-in")
+                        ))
+    service, file = classifier(None)
+    decision = service.classify(file)
+    assert decision.category == NEEDS_REVIEW
+
+
+def test_suggestion_never_becomes_move_category(monkeypatch):
+    monkeypatch.setattr("core.document_classifier.extract_pdf_evidence",
+                        lambda p: "Practical electronics reference")
+    service, file = classifier(None)
+    file["file_name"] = "Book_of_Making_2025.pdf"
+    service.definitions += [{
+        "name": "Maker & DIY", "extensions": [".pdf"], "keywords": ["Book of Making"]
+    }]
+    service.category_names = [d["name"] for d in service.definitions]
+    decision = service.classify(file)
+    assert decision.category == NEEDS_REVIEW
+    assert decision.suggested_category == "Maker & DIY"
