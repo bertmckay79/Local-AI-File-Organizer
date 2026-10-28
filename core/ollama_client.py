@@ -205,7 +205,8 @@ class OllamaClient:
         return None
 
     def chat(self, messages: list[dict], stream: bool = False,
-             use_json_format: bool = True, num_predict: int = None) -> Optional[str]:
+             use_json_format: bool = True, num_predict: int = None,
+             think: Optional[bool] = None) -> Optional[str]:
         """Send a chat request — routes to local Ollama or cloud API.
 
         Args:
@@ -217,10 +218,11 @@ class OllamaClient:
         """
         if self.is_cloud:
             return self._chat_cloud(messages, use_json_format, num_predict)
-        return self._chat_local(messages, stream, use_json_format, num_predict)
+        return self._chat_local(messages, stream, use_json_format, num_predict, think)
 
     def _chat_local(self, messages: list[dict], stream: bool,
-                    use_json_format: bool, num_predict: int) -> Optional[str]:
+                    use_json_format: bool, num_predict: int,
+                    think: Optional[bool] = None) -> Optional[str]:
         """Chat via local Ollama API."""
         payload = {
             "model": self.model,
@@ -233,6 +235,8 @@ class OllamaClient:
         }
         if use_json_format:
             payload["format"] = "json"
+        if think is not None:
+            payload["think"] = think
         try:
             resp = requests.post(
                 f"{self.server_url}/api/chat",
@@ -245,8 +249,11 @@ class OllamaClient:
                 content = message.get("content", "")
                 if not content:
                     self.logger.warning(
-                        f"Ollama returned empty content. "
-                        f"Response: {str(data)[:300]}"
+                        "Ollama model %s returned no answer (done_reason=%s, "
+                        "eval_count=%s, thinking_characters=%s). "
+                        "Check model selection and thinking/token settings.",
+                        self.model, data.get("done_reason"), data.get("eval_count"),
+                        len(message.get("thinking") or "")
                     )
                 return content
             else:
@@ -374,20 +381,42 @@ class OllamaClient:
             {"role": "user", "content": prompt},
         ]
 
-        response = self.chat(messages, num_predict=max(512, self.max_tokens))
-        if response:
+        # Older Ollama versions may ignore format=json for Qwen3.5 with
+        # thinking disabled, so request a plain answer and parse its JSON.
+        qwen35_local = not self.is_cloud and self.model.lower().startswith("qwen3.5")
+        response = self.chat(
+            messages, use_json_format=not qwen35_local,
+            num_predict=max(768, self.max_tokens),
+            think=False if qwen35_local else None,
+        )
+        if not response:
+            self.logger.warning("Classification returned no answer for %s using model %s",
+                                file_name, self.cloud_model if self.is_cloud else self.model)
+            return None
+
+        # Accept structured JSON surrounded by markdown fences or a preamble,
+        # but never classify merely because the text contains a category name.
+        parsed_category = None
+        decoder = json.JSONDecoder()
+        for index, char in enumerate(response):
+            if char != "{":
+                continue
             try:
-                result = json.loads(response.strip())
-                category = str(result.get("category", "")).strip()
-                if category in categories:
-                    return category
-                for cat in categories:
-                    if cat.lower() == category.lower():
-                        return cat
-                return "Miscellaneous"
+                parsed, _ = decoder.raw_decode(response[index:])
+                if isinstance(parsed, dict) and "category" in parsed:
+                    parsed_category = str(parsed.get("category") or "").strip()
+                    break
             except json.JSONDecodeError:
-                # Never guess from a substring of an invalid AI response.
-                return "Miscellaneous"
+                continue
+        if parsed_category is None:
+            self.logger.warning("Invalid classification JSON for %s (model=%s, preview=%r)",
+                                file_name, self.model, response[:160])
+            return None
+        for candidate in categories:
+            if candidate.casefold() == parsed_category.casefold():
+                return candidate
+        self.logger.warning("Unrecognised category %r from model for %s",
+                            parsed_category, file_name)
         return None
 
     def batch_classify(self, files: list[dict], categories: list[str],

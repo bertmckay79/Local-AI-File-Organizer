@@ -126,3 +126,44 @@ def test_ai_prompt_contains_category_keywords(monkeypatch):
     assert actual == "Software - Vue.js"
     assert "Pinia, Composition API" in calls[0][0][1]["content"]
     assert calls[0][1]["num_predict"] >= 512
+
+
+def test_qwen35_classification_disables_thinking_and_forced_json(monkeypatch):
+    from core.ollama_client import OllamaClient
+    client = OllamaClient(model="qwen3.5:4b")
+    calls = []
+
+    def fake_chat(messages, **kwargs):
+        calls.append(kwargs)
+        return 'Answer: {"category": "RPG - Game Master Resources"}'
+
+    monkeypatch.setattr(client, "chat", fake_chat)
+    category = client.classify_file(
+        {"file_name": "Adventure Design.pdf", "extension": ".pdf"},
+        ["RPG - Game Master Resources", "Documents"],
+        "How to design roleplaying adventures"
+    )
+    assert category == "RPG - Game Master Resources"
+    assert calls[0]["think"] is False
+    assert calls[0]["use_json_format"] is False
+    assert calls[0]["num_predict"] >= 768
+
+
+def test_qwen35_thinking_setting_is_top_level_payload(monkeypatch):
+    from core.ollama_client import OllamaClient
+    import core.ollama_client as module
+    client = OllamaClient(model="qwen3.5:4b")
+    post = Mock()
+    post.return_value.status_code = 200
+    post.return_value.json.return_value = {
+        "message": {"content": '{"category": "RPG - Other Systems"}'}
+    }
+    monkeypatch.setattr(module.requests, "post", post)
+    assert client.classify_file(
+        {"file_name": "Roleplaying.pdf", "extension": ".pdf"},
+        ["RPG - Other Systems"], "Basic Roleplaying rules"
+    ) == "RPG - Other Systems"
+    payload = post.call_args.kwargs["json"]
+    assert payload["think"] is False
+    assert "format" not in payload
+    assert payload["options"]["num_predict"] >= 768
