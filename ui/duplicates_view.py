@@ -8,7 +8,8 @@ from pathlib import Path
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QProgressBar,
     QTableWidget, QTableWidgetItem, QHeaderView, QGroupBox, QMessageBox,
-    QFileDialog, QTreeWidget, QTreeWidgetItem, QComboBox, QCheckBox
+    QFileDialog, QTreeWidget, QTreeWidgetItem, QComboBox, QCheckBox,
+    QAbstractItemView
 )
 from PySide6.QtCore import Qt, Signal, QThread
 from PySide6.QtGui import QColor
@@ -240,6 +241,7 @@ class DuplicatesView(QWidget):
         refresh_calibre.clicked.connect(self._refresh_calibre_duplicates)
         calibre_layout.addWidget(refresh_calibre)
         self.calibre_matches = QTableWidget()
+        self.calibre_matches.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.calibre_matches.setColumnCount(3)
         self.calibre_matches.setHorizontalHeaderLabels([
             "Ebook", "Calibre book ID", "Original location"
