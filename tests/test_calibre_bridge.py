@@ -189,3 +189,58 @@ def test_fresh_import_is_not_marked_duplicate():
     assert record["is_duplicate"] == 0
     assert record["duplicate_of"] is None
     assert json.loads(record["metadata_json"])["calibre"]["book_id"] == 25
+
+
+
+def test_organizer_refuses_to_move_duplicate_calibre_ebook(tmp_path):
+    from database.db_manager import DatabaseManager
+    from database.operations import OperationHistory
+    from core.organizer import FileOrganizer
+
+    db = DatabaseManager(tmp_path / "index.sqlite")
+    organizer = FileOrganizer(
+        db, OperationHistory(db),
+        {"organize": {"output_base": str(tmp_path / "organised")}}
+    )
+    ebook = _book(tmp_path)
+    file_data = {
+        "file_path": str(ebook), "file_name": ebook.name,
+        "extension": ".epub", "category": "RPG",
+    }
+    apply_calibre_result(file_data, CalibreResult(
+        "duplicate", "Calibre has the book", 17, "My Book", str(tmp_path / "library")
+    ))
+    db.upsert_file(file_data)
+    success, reason, operation = organizer.move_file(str(ebook), "RPG")
+    assert not success
+    assert "Calibre duplicate" in reason
+    assert ebook.is_file()
+    assert operation is None
+    db.disconnect()
+
+
+def test_organizer_refuses_to_move_imported_calibre_ebook(tmp_path):
+    from database.db_manager import DatabaseManager
+    from database.operations import OperationHistory
+    from core.organizer import FileOrganizer
+
+    db = DatabaseManager(tmp_path / "index.sqlite")
+    organizer = FileOrganizer(
+        db, OperationHistory(db),
+        {"organize": {"output_base": str(tmp_path / "organised")}}
+    )
+    ebook = _book(tmp_path, ".mobi")
+    file_data = {
+        "file_path": str(ebook), "file_name": ebook.name,
+        "extension": ".mobi", "category": "eBooks",
+    }
+    apply_calibre_result(file_data, CalibreResult(
+        "imported", "Book imported", 18, "The Test Book", str(tmp_path / "library")
+    ))
+    db.upsert_file(file_data)
+    success, reason, operation = organizer.move_file(str(ebook), "eBooks")
+    assert not success
+    assert "Calibre-managed" in reason
+    assert ebook.is_file()
+    assert operation is None
+    db.disconnect()

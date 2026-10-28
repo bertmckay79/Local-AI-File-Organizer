@@ -107,6 +107,20 @@ class FileOrganizer:
         """
         if category == REVIEW:
             return False, "Review required; file was not moved", None
+        # A Calibre import does not license moving/deleting the original
+        # ebook. Guard at the organizer layer, including after a manual
+        # category reassignment or an application restart.
+        record = self.db.get_file_by_path(src_path)
+        if record:
+            try:
+                details = json.loads(record.get("metadata_json") or "{}")
+                calibre_status = (details.get("calibre") or {}).get("status")
+            except (TypeError, ValueError, AttributeError):
+                calibre_status = None
+            if record.get("is_duplicate") and str(record.get("duplicate_of") or "").startswith("calibre:"):
+                return False, "Calibre duplicate; original file was not moved", None
+            if calibre_status in ("duplicate", "imported"):
+                return False, "Calibre-managed ebook; original file was not moved", None
         try:
             fields = category_fields(category)
             category = category_key(fields["category"], fields["subcategory"])

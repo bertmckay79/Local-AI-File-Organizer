@@ -551,6 +551,18 @@ class AnalyzeView(QWidget):
             QMessageBox.warning(self, "Missing Record",
                                 "Scan and analyse the file again before assigning it.")
             return
+        try:
+            existing_meta = json.loads(record.get("metadata_json") or "{}")
+            calibre_state = (existing_meta.get("calibre") or {}).get("status")
+        except (ValueError, TypeError, AttributeError):
+            calibre_state = None
+        if calibre_state in ("duplicate", "imported"):
+            QMessageBox.information(
+                self, "Calibre Managed",
+                "This ebook is already in Calibre or was just imported. "
+                "The source file remains in Needs Review and will not be moved."
+            )
+            return
         record.update(category_fields(target))
         try:
             audit = json.loads(record.get("analyzed_at") or "{}")
