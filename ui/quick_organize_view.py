@@ -9,6 +9,7 @@ from pathlib import Path
 from core.document_classifier import (
     DocumentClassificationService, load_category_definitions, NEEDS_REVIEW
 )
+from core.category_hierarchy import category_fields
 from datetime import datetime
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QProgressBar,
@@ -181,7 +182,7 @@ class QuickOrganizeWorker(QThread):
             if self.use_ai:
                 decision = classifier.classify(file_data)
                 category = decision.category
-                file_data["category"] = category
+                file_data.update(category_fields(category))
                 file_data["metadata_json"] = (
                     json.dumps(decision.metadata, default=str) if decision.metadata else None
                 )
@@ -204,7 +205,7 @@ class QuickOrganizeWorker(QThread):
             else:
                 category = rule_classifier.classify(file_data)
                 # Save to DB
-                file_data["category"] = category
+                file_data.update(category_fields(category))
                 try:
                     self.db.upsert_file(file_data)
                 except Exception:

@@ -44,3 +44,29 @@ def test_normalise_definition_explicit_parent():
         "name": "Godot", "parent": "Game Development",
         "extensions": [".pdf"]
     })["name"] == "Game Development / Godot"
+
+
+def test_category_folder_path_creates_two_levels(tmp_path):
+    from core.organizer import FileOrganizer
+    organizer = FileOrganizer.__new__(FileOrganizer)
+    organizer.output_base = str(tmp_path)
+    organizer.date_structures = {}
+    result = organizer.get_category_path("RPG - Game Master Resources", "manual.pdf")
+    assert result == tmp_path / "RPG-AI" / "Game Master Resources"
+
+
+def test_root_category_folder_path_remains_compatible(tmp_path):
+    from core.organizer import FileOrganizer
+    organizer = FileOrganizer.__new__(FileOrganizer)
+    organizer.output_base = str(tmp_path)
+    organizer.date_structures = {}
+    assert organizer.get_category_path("Archives", "a.zip") == tmp_path / "Archives-AI"
+
+
+def test_organizer_rejects_path_traversal(tmp_path):
+    from core.organizer import FileOrganizer
+    organizer = FileOrganizer.__new__(FileOrganizer)
+    organizer.output_base = str(tmp_path)
+    organizer.date_structures = {}
+    with pytest.raises(ValueError):
+        organizer.get_category_path("RPG / ../../private", "book.pdf")

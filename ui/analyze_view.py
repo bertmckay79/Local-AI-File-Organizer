@@ -9,6 +9,7 @@ from pathlib import Path
 from core.document_classifier import (
     DocumentClassificationService, load_category_definitions, NEEDS_REVIEW
 )
+from core.category_hierarchy import category_fields
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QProgressBar,
     QTableWidget, QTableWidgetItem, QHeaderView, QGroupBox, QMessageBox,
@@ -162,7 +163,7 @@ class AnalyzeWorker(QThread):
                     category = decision.category
                     results[file_path] = category
                     self.file_analyzed.emit(file_path, category, decision.suggested_category or "", decision.reason)
-                    file_data["category"] = category
+                    file_data.update(category_fields(category))
                     file_data["metadata_json"] = (
                         json.dumps(decision.metadata, default=str) if decision.metadata else None
                     )
@@ -185,7 +186,7 @@ class AnalyzeWorker(QThread):
                     results[file_path] = category
                     self.file_analyzed.emit(file_path, category, "", "Extension-only classification")
 
-                    file_data["category"] = category
+                    file_data.update(category_fields(category))
                     file_data["analyzed_at"] = json.dumps({"timestamp": None, "method": "rule-based"})
                     self.db.upsert_file(file_data)
 
