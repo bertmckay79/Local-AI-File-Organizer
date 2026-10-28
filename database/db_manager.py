@@ -10,6 +10,9 @@ from datetime import datetime
 from typing import Optional, Any
 
 from database.schema import get_schema
+from core.category_hierarchy import (
+    LEGACY_PARENTS, category_fields, normalise_category, split_category
+)
 
 
 class DatabaseManager:
@@ -46,6 +49,16 @@ class DatabaseManager:
     def init_schema(self) -> None:
         """Initialize database schema."""
         self.conn.executescript(get_schema())
+        # Convert the previous "RPG - Pathfinder" labels into the two
+        # existing file columns. Safe to run repeatedly on startup.
+        for parent in LEGACY_PARENTS:
+            prefix = parent + " - "
+            self.conn.execute(
+                """UPDATE files
+                   SET subcategory = substr(category, ?), category = ?
+                   WHERE category LIKE ? AND (subcategory IS NULL OR subcategory = '')""",
+                (len(prefix) + 1, parent, prefix + "%"),
+            )
         self.conn.commit()
 
     # --- File operations ---
@@ -209,7 +222,17 @@ class DatabaseManager:
     # --- Custom categories ---
 
     def add_custom_category(self, name: str, extensions: list[str], keywords: list[str]) -> None:
-        """Add a custom category."""
+        """Add a custom root category or canonical two-level category."""
+        name = normalise_category(name)
+        # Upgrade old custom labels in place to avoid duplicate logical categories.
+        for existing in self.conn.execute("SELECT name FROM custom_categories").fetchall():
+            old = existing["name"]
+            if old != name and normalise_category(old).casefold() == name.casefold():
+                self.conn.execute(
+                    "UPDATE custom_categories SET name = ? WHERE name = ?",
+                    (name, old),
+                )
+                break
         self.conn.execute(
             """INSERT INTO custom_categories (name, extensions_json, keywords_json, created_at)
                VALUES (?, ?, ?, ?)
@@ -233,7 +256,14 @@ class DatabaseManager:
 
     def delete_custom_category(self, name: str) -> None:
         """Delete a custom category."""
-        self.conn.execute("DELETE FROM custom_categories WHERE name = ?", (name,))
+        # Also support pre-upgrade legacy custom names.
+        requested = normalise_category(name)
+        old = self.conn.execute("SELECT name FROM custom_categories").fetchall()
+        for row in old:
+            if normalise_category(row["name"]).casefold() == requested.casefold():
+                self.conn.execute(
+                    "DELETE FROM custom_categories WHERE name = ?", (row["name"],)
+                )
         self.conn.commit()
 
     # --- Index state ---
