@@ -123,12 +123,15 @@ def main(argv=None):
     ocr = OCRProcessor(enabled=ocr_settings.get("enabled", False),
                        language=ocr_settings.get("language", "eng"),
                        max_pages=ocr_settings.get("max_pages", 10))
+    lookup_enabled = config.get("book_lookup", {}).get("external_enabled", False)
     service = DocumentClassificationService(
-        client, ContentReader(), MetadataExtractor(), ocr, definitions
+        client, ContentReader(), MetadataExtractor(), ocr, definitions,
+        lookup_enabled=lookup_enabled,
     )
     report = {
         "ollama_url": url, "model": model,
         "ocr_available": ocr.is_available(), "category_count": len(definitions),
+        "open_library_lookup_enabled": lookup_enabled,
         "books": [],
     }
     if not args.offline:
