@@ -11,6 +11,7 @@ from core.document_classifier import (
 )
 from core.category_hierarchy import normalise_category, split_category
 from core.category_hierarchy import category_fields
+from core.calibre_bridge import CalibreBridge, apply_calibre_result
 from datetime import datetime
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QProgressBar,
@@ -172,6 +173,7 @@ class QuickOrganizeWorker(QThread):
             lookup_enabled=self.config.get("book_lookup", {}).get("external_enabled", False),
         )
         file_categories = {}
+        calibre = CalibreBridge(self.config.get("calibre", {}))
         total = len(files)
 
         for i, file_data in enumerate(files):
@@ -215,17 +217,43 @@ class QuickOrganizeWorker(QThread):
             if not category:
                 category = NEEDS_REVIEW if self.use_ai else rule_classifier.classify(file_data)
 
+            calibre_result = calibre.process(file_path)
+            if calibre_result.status != "skipped":
+                apply_calibre_result(file_data, calibre_result)
+                try:
+                    audit = json.loads(file_data.get("analyzed_at") or "{}")
+                except (TypeError, ValueError):
+                    audit = {}
+                audit["calibre"] = {
+                    "status": calibre_result.status,
+                    "book_id": calibre_result.book_id,
+                    "message": calibre_result.message,
+                }
+                audit["requires_review"] = True
+                file_data["analyzed_at"] = json.dumps(audit)
+                # Duplicates and imported original ebooks stay at their source
+                # location; Calibre has its own independent library copy.
+                category = NEEDS_REVIEW
+                file_data.update(category_fields(category))
+                self.db.upsert_file(file_data)
+
             # Keep uncertain results visible but out of the automatic move queue.
             if category != NEEDS_REVIEW:
                 file_categories[file_path] = category
             results["categories"][category] = results["categories"].get(category, 0) + 1
             results["analyzed"] += 1
 
-            dest = (
-                f"Manual review — {decision.reason}" if category == NEEDS_REVIEW and self.use_ai
-                else ("Manual review — file unchanged" if category == NEEDS_REVIEW else
-                      str(self.organizer.get_category_path(category, file_path) / Path(file_path).name))
-            )
+            if calibre_result.status != "skipped":
+                dest = f"Calibre {calibre_result.status}: {calibre_result.message}"
+            elif category == NEEDS_REVIEW:
+                dest = ("Manual review — " + decision.reason) if self.use_ai else (
+                    "Manual review — file unchanged"
+                )
+            else:
+                dest = str(
+                    self.organizer.get_category_path(category, file_path)
+                    / Path(file_path).name
+                )
             self.file_processed.emit(file_data.get("file_name", ""), category, dest)
             self.progress.emit("Analyzing", i + 1, total)
 
