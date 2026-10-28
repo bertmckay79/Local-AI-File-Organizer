@@ -39,7 +39,7 @@ Checking, importing, and metadata downloading are explicit choices. All three de
 - A duplicate gets is_duplicate=1 and duplicate_of=calibre:book:<ID> in the application's SQLite index.
 - Duplicates, imported originals and uncertain matches remain in Needs Review and are excluded from automatic folder moves.
 - Files *inside* the Calibre library are never imported again or moved out.
-- This does not place matched ebooks in the application's hash-based Duplicate Finder groups; the Analyze Calibre column and persisted index hold the Calibre match.
+- Calibre matches are also displayed in the Duplicates tab under a separate, read-only **Already in Calibre** table. They are *not* part of the byte-for-byte duplicate groups and cannot be bulk-moved/deleted from that table.
 - No direct changes to Calibre's metadata.db are made; all actions use Calibre's CLI.
 
 ## Local testing
