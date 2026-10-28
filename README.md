@@ -251,6 +251,16 @@ Key settings:
 | `organize.output_base` | (empty) | Base output folder |
 | `ui.theme` | `dark` | UI theme |
 
+## 📚 Calibre ebook integration
+
+Calibre library checking and optional import of EPUB, MOBI, AZW3 and related
+ebooks is available under **Settings → Advanced → Calibre ebook integration**.
+Books already present are marked as duplicates, and missing ebooks can be
+imported when explicitly enabled. Calibre's online metadata downloads are
+a separate opt-in setting. PDF and archive files are excluded.
+
+See [Calibre integration](docs/CALIBRE_INTEGRATION.md) for setup and safeguards.
+
 ## 🤝 Contributing
 
 1. Fork the repository
