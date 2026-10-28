@@ -312,3 +312,27 @@ def test_surname_comma_given_name_does_not_match_common_given_name(
     ))
     result = bridge.process(_book(tmp_path))
     assert result.status == "review"
+
+
+
+def test_isbn_duplicate_check_works_without_readable_title(monkeypatch, tmp_path):
+    bridge = _bridge(
+        monkeypatch,
+        [{"id": 67, "title": "Actual Book Title", "isbn": ISBN,
+          "authors": "Somebody"}],
+        identity=BookIdentity(title="X", isbn=ISBN),
+    )
+    result = bridge.process(_book(tmp_path))
+    assert result.status == "duplicate"
+    assert result.book_id == 67
+
+
+def test_isbn_only_new_book_is_not_imported_without_title(monkeypatch, tmp_path):
+    bridge = _bridge(
+        monkeypatch, [], identity=BookIdentity(title="X", isbn=ISBN),
+        import_missing=True,
+    )
+    monkeypatch.setattr(bridge, "_db", lambda *args: pytest.fail(
+        "No import when title is unreadable"
+    ))
+    assert bridge.process(_book(tmp_path)).status == "review"

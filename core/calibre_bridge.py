@@ -228,8 +228,8 @@ class CalibreBridge:
                     library=str(self.library),
                 )
             book = self._identify(path)
-            if len(_norm(book.title)) < 5:
-                return CalibreResult("review", "Book title unavailable; cannot safely compare")
+            if not valid_isbn(book.isbn or "") and len(_norm(book.title)) < 5:
+                return CalibreResult("review", "ISBN/title unavailable; cannot safely compare")
             existing, ambiguous = self._match(book)
             if existing:
                 book_id = int(existing["id"])
@@ -240,6 +240,11 @@ class CalibreBridge:
             if ambiguous:
                 return CalibreResult(
                     "review", "Possible matching Calibre title; author/ISBN confirmation required",
+                    title=book.title, library=str(self.library),
+                )
+            if len(_norm(book.title)) < 5:
+                return CalibreResult(
+                    "review", "ISBN was not found in Calibre, but title is insufficient for import",
                     title=book.title, library=str(self.library),
                 )
             if not self.import_missing:
