@@ -593,7 +593,12 @@ class SettingsView(QWidget):
         self.calibre_cli.setPlaceholderText(
             "Optional Calibre program folder; leave blank if calibredb is in PATH"
         )
-        layout.addRow("Calibre tools:", self.calibre_cli)
+        cli_row = QHBoxLayout()
+        cli_row.addWidget(self.calibre_cli)
+        cli_browse = QPushButton("Browse...")
+        cli_browse.clicked.connect(lambda: self._browse_folder(self.calibre_cli))
+        cli_row.addWidget(cli_browse)
+        layout.addRow("Calibre tools:", cli_row)
 
         self.calibre_import = QCheckBox(
             "Import missing ebooks into Calibre (source file is not deleted)"
