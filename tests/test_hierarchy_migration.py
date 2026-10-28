@@ -43,3 +43,21 @@ def test_custom_category_old_name_upgrades_without_duplicate(tmp_path):
     db.delete_custom_category("Game Development / Godot")
     assert db.get_custom_categories() == []
     db.disconnect()
+
+
+
+def test_query_parent_or_specific_subcategory(tmp_path):
+    db = DatabaseManager(tmp_path / "indexed.sqlite")
+    for name, child in [("a.pdf", "Dungeons & Dragons"), ("b.pdf", "Pathfinder")]:
+        db.upsert_file({
+            "file_path": name, "file_name": name, "extension": ".pdf",
+            "category": "RPG", "subcategory": child
+        })
+    assert len(db.get_files_by_category("RPG")) == 2
+    assert [r["file_name"] for r in db.get_files_by_category(
+        "RPG / Pathfinder"
+    )] == ["b.pdf"]
+    assert [r["file_name"] for r in db.get_files_by_category(
+        "RPG - Dungeons & Dragons"
+    )] == ["a.pdf"]
+    db.disconnect()

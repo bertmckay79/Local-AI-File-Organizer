@@ -111,11 +111,24 @@ class DatabaseManager:
         return [dict(r) for r in rows]
 
     def get_files_by_category(self, category: str) -> list[dict]:
-        """Get all files in a category."""
-        rows = self.conn.execute(
-            "SELECT * FROM files WHERE category = ? AND is_deleted = 0 ORDER BY file_name",
-            (category,),
-        ).fetchall()
+        """Filter by a parent or by one exact subcategory.
+
+        Supports previous "Parent - Child" and canonical "Parent / Child" keys.
+        """
+        fields = category_fields(category)
+        if fields["subcategory"]:
+            rows = self.conn.execute(
+                """SELECT * FROM files
+                   WHERE category = ? AND subcategory = ? AND is_deleted = 0
+                   ORDER BY file_name""",
+                (fields["category"], fields["subcategory"]),
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                """SELECT * FROM files
+                   WHERE category = ? AND is_deleted = 0 ORDER BY file_name""",
+                (fields["category"],),
+            ).fetchall()
         return [dict(r) for r in rows]
 
     def get_all_files(self, limit: int = 0, offset: int = 0) -> list[dict]:
