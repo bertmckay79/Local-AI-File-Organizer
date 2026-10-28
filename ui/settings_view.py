@@ -18,6 +18,10 @@ from PySide6.QtCore import Qt, Signal, QThread
 from utils.config import ConfigManager
 from core.ollama_client import OllamaClient
 from database.db_manager import DatabaseManager
+from core.document_classifier import load_category_definitions
+from core.category_hierarchy import (
+    category_key, normalise_category, split_category, validate_segment
+)
 
 
 class SettingsView(QWidget):
@@ -468,16 +472,8 @@ class SettingsView(QWidget):
 
     def _populate_org_date_struct_table(self):
         """Populate date structure table in Settings."""
-        import json as _json
-        from pathlib import Path as _Path
-        cat_path = _Path(__file__).parent.parent / "config" / "categories.json"
-        with open(cat_path, "r") as _f:
-            cats = [c["name"] for c in _json.load(_f)["categories"]]
-        try:
-            custom = self.db.get_custom_categories()
-            cats.extend(c["name"] for c in custom if c["name"] not in cats)
-        except Exception:
-            pass
+        cat_path = Path(__file__).parent.parent / "config" / "categories.json"
+        cats = [c["name"] for c in load_category_definitions(cat_path, self.db)]
 
         saved = self.config_manager.config.get("organize", {}).get("date_structures", {})
         self.org_date_struct_table.setRowCount(len(cats))
@@ -517,11 +513,14 @@ class SettingsView(QWidget):
         layout.addWidget(QLabel("Configured Categories:"))
 
         self.categories_table = QTableWidget()
-        self.categories_table.setColumnCount(3)
-        self.categories_table.setHorizontalHeaderLabels(["Category", "Extensions", "Keywords"])
+        self.categories_table.setColumnCount(4)
+        self.categories_table.setHorizontalHeaderLabels(
+            ["Category", "Subcategory", "Extensions", "Keywords"]
+        )
         self.categories_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        self.categories_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        self.categories_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
         self.categories_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
+        self.categories_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.Stretch)
         layout.addWidget(self.categories_table)
 
         self._load_categories()
@@ -529,7 +528,7 @@ class SettingsView(QWidget):
         # Custom category buttons
         btn_layout = QHBoxLayout()
 
-        add_btn = QPushButton("➕ Add Custom Category")
+        add_btn = QPushButton("➕ Add Category / Subcategory")
         add_btn.clicked.connect(self._add_custom_category)
         btn_layout.addWidget(add_btn)
 
@@ -645,53 +644,85 @@ class SettingsView(QWidget):
         return tab
 
     def _load_categories(self):
-        """Load categories into the table."""
-        cat_path = Path(__file__).parent.parent / "config" / "categories.json"
-        with open(cat_path, "r") as f:
-            cat_config = json.load(f)
-
-        categories = cat_config["categories"]
-        custom = self.db.get_custom_categories()
-        for c in custom:
-            categories.append({"name": c["name"], "extensions": c.get("extensions", []),
-                               "keywords": c.get("keywords", [])})
-
-        self.categories_table.setRowCount(len(categories))
-        for i, cat in enumerate(categories):
-            self.categories_table.setItem(i, 0, QTableWidgetItem(cat["name"]))
-            self.categories_table.setItem(i, 1, QTableWidgetItem(", ".join(cat["extensions"])))
-            self.categories_table.setItem(i, 2, QTableWidgetItem(", ".join(cat["keywords"])))
+        """Display the two-level category tree and track custom-only rows."""
+        path = Path(__file__).parent.parent / "config" / "categories.json"
+        definitions = load_category_definitions(path, self.db)
+        custom_keys = {
+            normalise_category(c["name"]) for c in self.db.get_custom_categories()
+        }
+        self.categories_table.setRowCount(len(definitions))
+        for row, definition in enumerate(definitions):
+            parent, leaf = split_category(definition["name"])
+            item = QTableWidgetItem(parent)
+            item.setData(Qt.UserRole, definition["name"])
+            item.setData(Qt.UserRole + 1, definition["name"] in custom_keys)
+            self.categories_table.setItem(row, 0, item)
+            self.categories_table.setItem(row, 1, QTableWidgetItem(leaf or ""))
+            self.categories_table.setItem(
+                row, 2, QTableWidgetItem(", ".join(definition.get("extensions") or []))
+            )
+            self.categories_table.setItem(
+                row, 3, QTableWidgetItem(", ".join(definition.get("keywords") or []))
+            )
 
     def _add_custom_category(self):
-        """Add a custom category."""
-        name, ok = QInputDialog.getText(self, "Custom Category", "Category name:")
-        if not ok or not name:
+        """Add a top-level category or an optional child under an existing parent."""
+        path = Path(__file__).parent.parent / "config" / "categories.json"
+        defs = load_category_definitions(path, self.db)
+        parents = sorted({split_category(c["name"])[0] for c in defs
+                          if c["name"] not in ("Needs Review", "Miscellaneous")})
+        parent, ok = QInputDialog.getItem(
+            self, "New Category", "Category (select existing or type new):",
+            parents, 0, True
+        )
+        if not ok:
             return
-
+        sub, ok = QInputDialog.getText(
+            self, "Optional Subcategory", "Subcategory (leave blank for top-level):"
+        )
+        if not ok:
+            return
+        try:
+            name = category_key(parent, sub.strip() or None)
+        except ValueError as exc:
+            QMessageBox.warning(self, "Invalid Category", str(exc))
+            return
+        if name in {c["name"] for c in defs}:
+            QMessageBox.warning(self, "Exists", f"{name} already exists.")
+            return
+        default_ext = ".pdf,.epub" if sub.strip() else ""
         exts, ok = QInputDialog.getText(
-            self, "Extensions", "Extensions (comma-separated, e.g. .xyz,.abc):"
+            self, "Extensions", "Extensions (comma-separated):", text=default_ext
         )
         if not ok:
             return
-
         keywords, ok = QInputDialog.getText(
-            self, "Keywords", "Keywords (comma-separated):"
+            self, "Keywords", "Subject keywords (comma-separated):"
         )
         if not ok:
             return
-
-        ext_list = [e.strip() for e in exts.split(",") if e.strip()]
-        kw_list = [k.strip() for k in keywords.split(",") if k.strip()]
-
+        ext_list = [
+            "." + x.strip().lower().lstrip(".") for x in exts.split(",")
+            if x.strip()
+        ]
+        kw_list = [x.strip() for x in keywords.split(",") if x.strip()]
         self.db.add_custom_category(name, ext_list, kw_list)
         self._load_categories()
 
     def _delete_custom_category(self):
-        """Delete a custom category."""
         row = self.categories_table.currentRow()
-        if row < 0:
+        item = self.categories_table.item(row, 0) if row >= 0 else None
+        if not item:
             return
-        name = self.categories_table.item(row, 0).text()
+        if not item.data(Qt.UserRole + 1):
+            QMessageBox.information(self, "Built-in Category",
+                                    "Only custom categories can be deleted.")
+            return
+        name = item.data(Qt.UserRole)
+        if QMessageBox.question(
+            self, "Delete Category", f"Delete custom category '{name}'?"
+        ) != QMessageBox.Yes:
+            return
         self.db.delete_custom_category(name)
         self._load_categories()
 

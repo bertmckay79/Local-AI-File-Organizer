@@ -9,6 +9,7 @@ from pathlib import Path
 from core.document_classifier import (
     DocumentClassificationService, load_category_definitions, NEEDS_REVIEW
 )
+from core.category_hierarchy import normalise_category, split_category
 from core.category_hierarchy import category_fields
 from datetime import datetime
 from PySide6.QtWidgets import (
@@ -431,15 +432,9 @@ class QuickOrganizeView(QWidget):
     def _populate_date_struct_table(self):
         """Populate the per-category date structure table."""
         categories_path = Path(__file__).parent.parent / "config" / "categories.json"
-        with open(categories_path, "r") as f:
-            cat_config = json.load(f)
-        all_cats = [c["name"] for c in cat_config["categories"]]
-
-        try:
-            custom = self.db.get_custom_categories()
-            all_cats.extend(c["name"] for c in custom if c["name"] not in all_cats)
-        except Exception:
-            pass
+        all_cats = [
+            c["name"] for c in load_category_definitions(categories_path, self.db)
+        ]
 
         saved = self.config.get("organize", {}).get("date_structures", {})
 
