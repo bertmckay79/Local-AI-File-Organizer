@@ -331,7 +331,7 @@ class OllamaClient:
         if metadata:
             prompt_parts.append(f"Metadata: {json.dumps(metadata, indent=2)}")
         if content_summary:
-            prompt_parts.append(f"Content summary: {content_summary[:3000]}")
+            prompt_parts.append(f"Document evidence: {content_summary[:7000]}")
 
         if category_details:
             descriptions = []
@@ -386,10 +386,7 @@ class OllamaClient:
                         return cat
                 return "Miscellaneous"
             except json.JSONDecodeError:
-                response_clean = response.strip().strip('"').strip("'")
-                for cat in categories:
-                    if cat.lower() in response_clean.lower():
-                        return cat
+                # Never guess from a substring of an invalid AI response.
                 return "Miscellaneous"
         return None
 

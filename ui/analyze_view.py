@@ -139,8 +139,7 @@ class AnalyzeWorker(QThread):
         else:
             self.status_update.emit(f"Analyzing {total} files (rule-based, no AI)...")
 
-        # Use rule-based classifier as fallback
-        # Always create rule_classifier — used as fallback even in AI mode
+        # Use extension rules only when rule-based mode was explicitly selected.
         rule_classifier = RuleBasedClassifier(self.categories)
         classifier = DocumentClassificationService(
             self.ollama, self.content_reader, self.metadata_extractor,
@@ -404,7 +403,7 @@ class AnalyzeView(QWidget):
             unanalyzed = []
             for f in self.files:
                 cat = f.get("category", "")
-                if not cat or cat == "Uncategorized" or cat == "Miscellaneous":
+                if not cat or cat in ("Uncategorized", "Miscellaneous", NEEDS_REVIEW):
                     unanalyzed.append(f)
             if not unanalyzed:
                 self.status_label.setText("All files already analyzed. Toggle Bulk mode to re-analyze all.")

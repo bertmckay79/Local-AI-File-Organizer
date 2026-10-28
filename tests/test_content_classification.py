@@ -98,3 +98,31 @@ def test_epub_spine_order_and_metadata(tmp_path):
     text = extract_epub_evidence(file)
     assert "TypeScript Handbook" in text
     assert text.index("Type inference") < text.index("Other text")
+
+
+def test_organizer_refuses_to_move_review_files():
+    from core.organizer import FileOrganizer
+    organizer = FileOrganizer.__new__(FileOrganizer)
+    success, message, operation = organizer.move_file("does-not-exist.pdf", NEEDS_REVIEW)
+    assert not success
+    assert "not moved" in message
+    assert operation is None
+
+
+def test_ai_prompt_contains_category_keywords(monkeypatch):
+    from core.ollama_client import OllamaClient
+    client = OllamaClient()
+    calls = []
+
+    def fake_chat(messages, **kwargs):
+        calls.append((messages, kwargs))
+        return json.dumps({"category": "Software - Vue.js"})
+
+    monkeypatch.setattr(client, "chat", fake_chat)
+    actual = client.classify_file(
+        {"file_name": "vue.pdf", "extension": ".pdf"}, [c["name"] for c in CATS],
+        "Vue Pinia", category_details=CATS
+    )
+    assert actual == "Software - Vue.js"
+    assert "Pinia, Composition API" in calls[0][0][1]["content"]
+    assert calls[0][1]["num_predict"] >= 512

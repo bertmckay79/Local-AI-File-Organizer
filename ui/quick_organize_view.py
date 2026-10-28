@@ -495,7 +495,15 @@ class QuickOrganizeView(QWidget):
         # Other options come from Settings → Organize tab
         self.organizer.update_config(self.config)
 
-        use_ai = self.config.get("analyze", {}).get("use_ai", False) and self.ollama.is_available()
+        requested_ai = self.config.get("analyze", {}).get("use_ai", False)
+        if requested_ai and not self.ollama.is_available():
+            QMessageBox.warning(
+                self, "AI Unavailable",
+                "AI classification is enabled but Ollama is unavailable. "
+                "Quick Organize was cancelled to prevent extension-only sorting."
+            )
+            return
+        use_ai = requested_ai
         bulk = organize_config.get("bulk_mode", True)
 
         self.results_table.setRowCount(0)
