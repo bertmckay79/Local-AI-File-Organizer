@@ -172,7 +172,7 @@ def test_qwen35_thinking_setting_is_top_level_payload(monkeypatch):
 def test_generic_book_ai_result_gets_subject_only_retry(monkeypatch):
     monkeypatch.setattr("core.document_classifier.extract_pdf_evidence", lambda p: "Game master advice")
     service, file = classifier("Documents")
-    service.definitions = CATS + [{"name": "RPG - Game Master Resources", "keywords": ["GM"]}]
+    service.definitions = CATS + [{"name": "RPG - Game Master Resources", "keywords": ["GM"], "extensions": [".pdf", ".epub"]}]
     service.category_names = [item["name"] for item in service.definitions]
     service.ollama.classify_file.side_effect = ["Documents", "RPG - Game Master Resources"]
     result = service.classify(file)
@@ -188,3 +188,41 @@ def test_empty_ai_response_gives_actionable_review_reason(monkeypatch):
     result = service.classify(file)
     assert result.category == NEEDS_REVIEW
     assert "Ollama" in result.reason
+
+
+
+def test_book_retry_uses_extension_eligible_categories_not_prefixes(monkeypatch):
+    """Maker books and future custom topics must be considered during AI retry."""
+    from core.document_classifier import book_subject_categories
+
+    categories = [
+        {"name": "Documents", "extensions": [".pdf"]},
+        {"name": "eBooks", "extensions": [".epub"]},
+        {"name": "Maker & DIY", "extensions": [".pdf", ".epub"],
+         "keywords": ["HackSpace", "Raspberry Pi Pico", "soldering"]},
+        {"name": "Pictures", "extensions": [".png"]},
+        {"name": "Needs Review", "extensions": []},
+    ]
+    assert [c["name"] for c in book_subject_categories(categories, ".pdf")] == ["Maker & DIY"]
+    assert [c["name"] for c in book_subject_categories(categories, ".epub")] == ["Maker & DIY"]
+
+
+def test_maker_book_classifies_on_subject_only_retry(monkeypatch):
+    monkeypatch.setattr(
+        "core.document_classifier.extract_pdf_evidence",
+        lambda path: "Book of Making 2025 HackSpace DIY electronics and Raspberry Pi projects"
+    )
+    service, file = classifier("eBooks")
+    maker = {
+        "name": "Maker & DIY", "extensions": [".pdf", ".epub"],
+        "keywords": ["HackSpace", "microcontrollers", "making", "3D printing"],
+    }
+    service.definitions = CATS + [maker]
+    service.category_names = [item["name"] for item in service.definitions]
+    service.ollama.classify_file.side_effect = ["eBooks", "Maker & DIY"]
+    decision = service.classify(file)
+    assert decision.category == "Maker & DIY"
+    assert decision.requires_review is False
+    categories_on_retry = service.ollama.classify_file.call_args.args[1]
+    assert "Maker & DIY" in categories_on_retry
+    assert "eBooks" not in categories_on_retry

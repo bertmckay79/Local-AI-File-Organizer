@@ -650,6 +650,39 @@
       ]
     },
     {
+      "name": "Maker & DIY",
+      "extensions": [
+        ".pdf",
+        ".epub",
+        ".docx",
+        ".txt",
+        ".md",
+        ".rtf",
+        ".odt"
+      ],
+      "description": "Practical maker projects, electronics, microcontrollers, hobby engineering, Raspberry Pi and Arduino, 3D printing, fabrication, workshops, and hands-on DIY.",
+      "keywords": [
+        "maker",
+        "making",
+        "HackSpace",
+        "Book of Making",
+        "makerspace",
+        "Raspberry Pi",
+        "Raspberry Pi Pico",
+        "Arduino",
+        "microcontroller",
+        "electronics",
+        "soldering",
+        "PCB",
+        "3D fabrication",
+        "3D printing",
+        "laser cutting",
+        "woodworking",
+        "DIY projects",
+        "robotics"
+      ]
+    },
+    {
       "name": "Fiction - Fantasy",
       "extensions": [
         ".pdf",

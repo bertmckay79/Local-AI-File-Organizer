@@ -37,6 +37,25 @@ def load_category_definitions(path, db=None):
     return unique
 
 
+
+def book_subject_categories(definitions, extension):
+    """Eligible subject categories for PDF/EPUB retry, including user-defined ones.
+
+    Category eligibility follows configured file extensions, not naming prefixes.
+    Generic buckets (eBooks/Documents) and Needs Review are never candidates.
+    """
+    ext = extension.lower()
+    return [
+        item for item in definitions
+        if item.get("name", "").casefold() not in GENERIC_BOOK_CATEGORIES
+        and item.get("name", "") != NEEDS_REVIEW
+        and ext in {
+            str(suffix).lower() if str(suffix).startswith(".") else "." + str(suffix).lower()
+            for suffix in (item.get("extensions") or [])
+        }
+    ]
+
+
 class _HTMLText(HTMLParser):
     def __init__(self):
         super().__init__(convert_charrefs=True)
@@ -212,14 +231,7 @@ class DocumentClassificationService:
         # Retry generic book categories once, using only subject categories.
         # Unlike extension fallback, the model must still use book evidence.
         if extension in BOOK_EXTS and category and category.casefold() in GENERIC_BOOK_CATEGORIES:
-            subject_definitions = [
-                item for item in self.definitions
-                if item.get("name", "").casefold() not in GENERIC_BOOK_CATEGORIES
-                and item.get("name", "") != NEEDS_REVIEW
-                and (item.get("name", "").startswith(
-                    ("RPG - ", "Software - ", "Game Development - ", "Fiction - ")
-                ) or item.get("name", "") == "Game Design")
-            ]
+            subject_definitions = book_subject_categories(self.definitions, extension)
             if subject_definitions:
                 try:
                     names = [item["name"] for item in subject_definitions]
