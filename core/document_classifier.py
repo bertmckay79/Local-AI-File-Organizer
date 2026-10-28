@@ -186,6 +186,12 @@ class DocumentClassificationService:
             except Exception as exc:
                 logger.warning("OCR failed for %s: %s", path, exc)
 
+        if extension in BOOK_EXTS and not content:
+            return ClassificationDecision(
+                NEEDS_REVIEW, "No readable document text; check PDF OCR or EPUB file",
+                metadata, content, True
+            )
+
         file_info = {
             "file_name": file_data.get("file_name") or Path(path).name,
             "extension": extension,
@@ -198,13 +204,48 @@ class DocumentClassificationService:
             )
         except Exception as exc:
             logger.warning("AI classification failed for %s: %s", path, exc)
-            return ClassificationDecision(NEEDS_REVIEW, "AI request failed", metadata, content, True)
-
-        if not category or category not in self.category_names or category in (NEEDS_REVIEW, "Miscellaneous"):
-            return ClassificationDecision(NEEDS_REVIEW, "No specific AI category", metadata, content, True)
-        if extension in BOOK_EXTS and not content:
-            return ClassificationDecision(NEEDS_REVIEW, "Unreadable document; check OCR", metadata, content, True)
-        if extension in BOOK_EXTS and category.casefold() in GENERIC_BOOK_CATEGORIES:
             return ClassificationDecision(
-                NEEDS_REVIEW, "AI returned generic category: " + category, metadata, content, True)
-        return ClassificationDecision(category, "AI subject classification", metadata, content)
+                NEEDS_REVIEW, f"AI request failed: {type(exc).__name__}: {str(exc)[:120]}",
+                metadata, content, True
+            )
+
+        # Retry generic book categories once, using only subject categories.
+        # Unlike extension fallback, the model must still use book evidence.
+        if extension in BOOK_EXTS and category and category.casefold() in GENERIC_BOOK_CATEGORIES:
+            subject_definitions = [
+                item for item in self.definitions
+                if item.get("name", "").casefold() not in GENERIC_BOOK_CATEGORIES
+                and item.get("name", "") != NEEDS_REVIEW
+                and (item.get("name", "").startswith(
+                    ("RPG - ", "Software - ", "Game Development - ", "Fiction - ")
+                ) or item.get("name", "") == "Game Design")
+            ]
+            if subject_definitions:
+                try:
+                    names = [item["name"] for item in subject_definitions]
+                    retried = self.ollama.classify_file(
+                        file_info, names, content, category_details=subject_definitions
+                    )
+                    if retried in names:
+                        logger.info("Reclassified %s from %s to %s on retry",
+                                    path, category, retried)
+                        return ClassificationDecision(
+                            retried, f"AI subject-only retry (initially {category})",
+                            metadata, content
+                        )
+                except Exception as exc:
+                    logger.warning("Subject-only retry failed for %s: %s", path, exc)
+
+        if not category:
+            reason = "Ollama returned no usable category; check model and application logs"
+        elif category not in self.category_names:
+            reason = f"AI returned unknown category: {category}"
+        elif category in (NEEDS_REVIEW, "Miscellaneous"):
+            reason = "AI could not identify a specific category"
+        elif extension in BOOK_EXTS and category.casefold() in GENERIC_BOOK_CATEGORIES:
+            reason = f"AI returned generic book category: {category}; subject retry failed"
+        else:
+            return ClassificationDecision(category, "AI subject classification", metadata, content)
+
+        logger.warning("Classification needs review for %s: %s", path, reason)
+        return ClassificationDecision(NEEDS_REVIEW, reason, metadata, content, True)
