@@ -290,3 +290,20 @@ def test_metadata_isbn_mismatch_and_different_title_not_applied(monkeypatch):
     assert "mismatch" in bridge._fetch_and_set_metadata(
         8, BookIdentity("The Test Book", isbn="9780306406157")
     )
+
+
+
+def test_surname_comma_given_name_does_not_match_common_given_name(
+    monkeypatch, tmp_path
+):
+    bridge = _bridge(
+        monkeypatch,
+        [{"id": 77, "title": "The Test Book", "authors": ["Smith, John"]}],
+        identity=BookIdentity("The Test Book", author="Doe, John"),
+        import_missing=True,
+    )
+    monkeypatch.setattr(bridge, "_db", lambda *args: pytest.fail(
+        "Should not import an ambiguously matched title"
+    ))
+    result = bridge.process(_book(tmp_path))
+    assert result.status == "review"

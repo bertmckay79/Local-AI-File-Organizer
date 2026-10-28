@@ -51,7 +51,7 @@ def _authors(value) -> set[str]:
         text = " & ".join(str(x) for x in value)
     else:
         text = str(value or "")
-    return {_norm(x) for x in re.split(r"\s*(?:&|,|;|\band\b)\s*", text)
+    return {_norm(x) for x in re.split(r"\s*(?:&|;|\band\b)\s*", text)
             if _norm(x) not in ("", "unknown", "unknown author")}
 
 
