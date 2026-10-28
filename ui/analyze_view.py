@@ -9,11 +9,13 @@ from pathlib import Path
 from core.document_classifier import (
     DocumentClassificationService, load_category_definitions, NEEDS_REVIEW
 )
-from core.category_hierarchy import category_fields
+from core.category_hierarchy import (
+    category_fields, category_key, normalise_category, split_category
+)
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QProgressBar,
     QTableWidget, QTableWidgetItem, QHeaderView, QGroupBox, QMessageBox,
-    QCheckBox, QComboBox, QTextEdit, QSplitter, QTabWidget
+    QCheckBox, QComboBox, QTextEdit, QSplitter, QTabWidget, QInputDialog
 )
 from PySide6.QtCore import Qt, Signal, QThread, QTimer
 
@@ -227,6 +229,7 @@ class AnalyzeView(QWidget):
         self.files: list[dict] = []
         self.analyze_worker = None
         self.logger = get_logger()
+        self._current_results = {}
         self._init_ui()
 
         # Check AI status on init (deferred to avoid blocking UI)
@@ -299,15 +302,17 @@ class AnalyzeView(QWidget):
         preview_layout = QVBoxLayout()
 
         self.preview_table = QTableWidget()
-        self.preview_table.setColumnCount(5)
+        self.preview_table.setColumnCount(6)
         self.preview_table.setHorizontalHeaderLabels([
-            "File", "Path", "Category", "Suggested category", "Classification reason"
+            "File", "Path", "Category", "Subcategory",
+            "Suggested category", "Classification reason"
         ])
         self.preview_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
         self.preview_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         self.preview_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
         self.preview_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
-        self.preview_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.Stretch)
+        self.preview_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeToContents)
+        self.preview_table.horizontalHeader().setSectionResizeMode(5, QHeaderView.Stretch)
         self.preview_table.setAlternatingRowColors(True)
         preview_layout.addWidget(self.preview_table)
 
@@ -328,6 +333,18 @@ class AnalyzeView(QWidget):
         self.cancel_btn.clicked.connect(self._cancel_analysis)
         ctrl_layout.addWidget(self.cancel_btn)
 
+        accept_btn = QPushButton("✓ Accept Suggested Category")
+        accept_btn.clicked.connect(self._accept_suggestion)
+        ctrl_layout.addWidget(accept_btn)
+
+        assign_btn = QPushButton("Assign Existing...")
+        assign_btn.clicked.connect(self._assign_existing_category)
+        ctrl_layout.addWidget(assign_btn)
+
+        create_btn = QPushButton("➕ New Category / Subcategory")
+        create_btn.clicked.connect(self._create_category_from_review)
+        ctrl_layout.addWidget(create_btn)
+
         ctrl_layout.addStretch()
         layout.addLayout(ctrl_layout)
 
@@ -342,6 +359,7 @@ class AnalyzeView(QWidget):
     def set_files(self, files: list[dict]):
         """Set the files to analyze."""
         self.files = files
+        self._current_results = {}
         self.status_label.setText(f"{len(files)} files ready for analysis")
         self.preview_table.setRowCount(0)
 
@@ -467,14 +485,159 @@ class AnalyzeView(QWidget):
         self.preview_table.insertRow(row)
         self.preview_table.setItem(row, 0, QTableWidgetItem(Path(file_path).name))
         self.preview_table.setItem(row, 1, QTableWidgetItem(file_path))
-        self.preview_table.setItem(row, 2, QTableWidgetItem(category))
-        self.preview_table.setItem(row, 3, QTableWidgetItem(suggestion))
+        parent, child = split_category(category)
+        self.preview_table.setItem(row, 2, QTableWidgetItem(parent))
+        self.preview_table.setItem(row, 3, QTableWidgetItem(child or ""))
+        self.preview_table.setItem(row, 4, QTableWidgetItem(suggestion))
         reason_item = QTableWidgetItem(reason)
         reason_item.setToolTip(reason)
-        self.preview_table.setItem(row, 4, reason_item)
+        self.preview_table.setItem(row, 5, reason_item)
 
     def _on_status(self, msg: str):
         self.status_label.setText(msg)
+
+    def _selected_review_file(self):
+        """Return the selected result row and source file, if analysis is idle."""
+        if self.analyze_worker and self.analyze_worker.isRunning():
+            QMessageBox.information(self, "Analysis Running",
+                                    "Finish analysis before editing classifications.")
+            return None
+        row = self.preview_table.currentRow()
+        if row < 0:
+            QMessageBox.information(self, "Select a Book",
+                                    "Select a row in the analysis preview first.")
+            return None
+        cell = self.preview_table.item(row, 1)
+        return (row, cell.text()) if cell else None
+
+    def _approve_category(self, row: int, file_path: str, label: str):
+        """Approve the exact path and synchronise the DB and Organize preview."""
+        definitions = load_category_definitions(
+            Path(__file__).parent.parent / "config" / "categories.json", self.db
+        )
+        try:
+            target = normalise_category(label)
+        except ValueError as exc:
+            QMessageBox.warning(self, "Invalid Category", str(exc))
+            return
+        if target not in {c["name"] for c in definitions} or target == NEEDS_REVIEW:
+            QMessageBox.warning(self, "Unknown Category",
+                                "Create the category in the application before assigning it.")
+            return
+        record = self.db.get_file_by_path(file_path)
+        if record is None:
+            QMessageBox.warning(self, "Missing Record",
+                                "Scan and analyse the file again before assigning it.")
+            return
+        record.update(category_fields(target))
+        try:
+            audit = json.loads(record.get("analyzed_at") or "{}")
+        except (ValueError, TypeError):
+            audit = {}
+        audit.update({
+            "method": "manual approval",
+            "requires_review": False,
+            "suggested_category": None,
+            "reason": "Category confirmed by user",
+        })
+        record["analyzed_at"] = json.dumps(audit)
+        self.db.upsert_file(record)
+        for file_data in self.files:
+            if file_data.get("file_path") == file_path:
+                file_data.update(category_fields(target))
+                file_data["analyzed_at"] = record["analyzed_at"]
+        parent, child = split_category(target)
+        self.preview_table.item(row, 2).setText(parent)
+        self.preview_table.item(row, 3).setText(child or "")
+        self.preview_table.item(row, 4).setText("")
+        self.preview_table.item(row, 5).setText("Category confirmed by user")
+        self._current_results[file_path] = target
+        self.analysis_complete.emit(dict(self._current_results))
+        self.status_label.setText(f"Assigned {Path(file_path).name} to {target}")
+
+    def _accept_suggestion(self):
+        selection = self._selected_review_file()
+        if not selection:
+            return
+        row, file_path = selection
+        current = self.preview_table.item(row, 2).text()
+        suggestion = self.preview_table.item(row, 4).text().strip()
+        if current != NEEDS_REVIEW or not suggestion:
+            QMessageBox.information(self, "No Pending Suggestion",
+                                    "Select a Needs Review row with a proposed category.")
+            return
+        self._approve_category(row, file_path, suggestion)
+
+    def _assign_existing_category(self):
+        selection = self._selected_review_file()
+        if not selection:
+            return
+        row, file_path = selection
+        definitions = load_category_definitions(
+            Path(__file__).parent.parent / "config" / "categories.json", self.db
+        )
+        choices = sorted(c["name"] for c in definitions if c["name"] != NEEDS_REVIEW)
+        label, ok = QInputDialog.getItem(
+            self, "Assign Category", "Category / Subcategory:", choices, 0, False
+        )
+        if ok and label:
+            self._approve_category(row, file_path, label)
+
+    def _create_category_from_review(self):
+        """Create a new category from a review result, optionally assigning it."""
+        selection = self._selected_review_file()
+        if not selection:
+            return
+        row, file_path = selection
+        path = Path(__file__).parent.parent / "config" / "categories.json"
+        definitions = load_category_definitions(path, self.db)
+        proposed = self.preview_table.item(row, 4).text().strip()
+        proposed_parent, proposed_child = split_category(proposed) if proposed else ("", None)
+        parents = sorted({
+            split_category(c["name"])[0] for c in definitions
+            if c["name"] not in (NEEDS_REVIEW, "Miscellaneous")
+        })
+        initial_index = parents.index(proposed_parent) if proposed_parent in parents else 0
+        parent, ok = QInputDialog.getItem(
+            self, "Add Category", "Parent category (or type a new one):",
+            parents, initial_index, True
+        )
+        if not ok:
+            return
+        child, ok = QInputDialog.getText(
+            self, "Add Subcategory", "Subcategory (optional):",
+            text=proposed_child or ""
+        )
+        if not ok:
+            return
+        try:
+            name = category_key(parent, child.strip() or None)
+        except ValueError as exc:
+            QMessageBox.warning(self, "Invalid Category", str(exc))
+            return
+        if name in {c["name"] for c in definitions}:
+            QMessageBox.information(self, "Category Exists",
+                                    "That category already exists. Use Assign Existing.")
+            return
+        words, ok = QInputDialog.getText(
+            self, "Category Keywords", "Keywords (comma-separated):",
+            text=child.strip() or parent.strip()
+        )
+        if not ok:
+            return
+        extensions = [".pdf", ".epub"] if Path(file_path).suffix.lower() in (".pdf", ".epub") else [
+            Path(file_path).suffix.lower()
+        ]
+        self.db.add_custom_category(
+            name, extensions, [word.strip() for word in words.split(",") if word.strip()]
+        )
+        if QMessageBox.question(
+            self, "Assign New Category",
+            f"Created '{name}'. Assign the selected file to this category?"
+        ) == QMessageBox.Yes:
+            self._approve_category(row, file_path, name)
+        else:
+            self.status_label.setText(f"Created category {name}")
 
     def _on_finished(self, results: dict):
         """Handle analysis completion."""
@@ -483,4 +646,5 @@ class AnalyzeView(QWidget):
         self.cancel_btn.setEnabled(False)
         self.status_label.setText(f"Analysis complete: {len(results)} files classified")
 
-        self.analysis_complete.emit(results)
+        self._current_results = dict(results)
+        self.analysis_complete.emit(dict(self._current_results))
