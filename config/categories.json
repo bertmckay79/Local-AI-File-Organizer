@@ -1,18 +1,505 @@
 {
   "categories": [
-    {"name": "Documents", "extensions": [".pdf", ".doc", ".docx", ".txt", ".rtf", ".odt", ".pages", ".md", ".tex", ".wps"], "keywords": ["document", "report", "letter", "memo", "notes", "resume", "cv", "contract", "invoice", "specification", "proposal", "draft"]},
-    {"name": "Finance", "extensions": [".xls", ".xlsx", ".csv", ".qfx", ".qbo", ".ofx", ".tax", ".money", ".qb2019"], "keywords": ["bank", "statement", "finance", "budget", "tax", "invoice", "payment", "receipt", "account", "transaction", "salary", "payroll", "expense", "investment", "portfolio"]},
-    {"name": "Pictures", "extensions": [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".tif", ".webp", ".heic", ".raw", ".cr2", ".nef", ".arw", ".dng", ".svg", ".ico"], "keywords": ["photo", "image", "picture", "screenshot", "wallpaper", "avatar", "img", "camera", "dsc"]},
-    {"name": "Videos", "extensions": [".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm", ".m4v", ".mpg", ".mpeg", ".3gp", ".ts", ".vob"], "keywords": ["video", "movie", "clip", "recording", "capture", "film", "trailer", "tutorial", "cam"]},
-    {"name": "Music", "extensions": [".mp3", ".flac", ".wav", ".aac", ".ogg", ".wma", ".m4a", ".alac", ".aiff", ".opus"], "keywords": ["music", "song", "audio", "track", "album", "playlist", "podcast", "sound", "beat"]},
-    {"name": "Downloads", "extensions": [".crdownload", ".part", ".download"], "keywords": ["download", "temp", "partial"]},
-    {"name": "Android", "extensions": [".apk", ".xapk", ".apks", ".aab", ".dex"], "keywords": ["android", "apk", "app", "mobile", "google play", "sideload"]},
-    {"name": "GitHub", "extensions": [".git", ".gitignore", ".gitattributes", ".gitmodules"], "keywords": ["github", "git", "repo", "repository", "clone", "commit", "branch", "readme", "license"]},
-    {"name": "Projects", "extensions": [".py", ".js", ".ts", ".java", ".cpp", ".c", ".h", ".hpp", ".cs", ".go", ".rs", ".rb", ".php", ".swift", ".kt", ".dart", ".lua", ".r", ".scala", ".sh", ".bat", ".ps1", ".sql", ".html", ".css", ".scss", ".less", ".vue", ".jsx", ".tsx", ".json", ".yaml", ".yml", ".xml", ".toml", ".ini", ".cfg", ".conf", ".makefile", ".cmake", ".gradle", ".sln", ".proj", ".vcxproj"], "keywords": ["project", "source", "code", "script", "build", "compile", "package", "module", "library", "framework", "app", "program", "solution"]},
-    {"name": "eBooks", "extensions": [".epub", ".mobi", ".azw", ".azw3", ".kf8", ".pdb", ".fb2", ".lit", ".lrf"], "keywords": ["ebook", "book", "novel", "kindle", "epub", "chapter", "author", "isbn"]},
-    {"name": "Archives", "extensions": [".zip", ".rar", ".7z", ".tar", ".gz", ".bz2", ".xz", ".lzma", ".cab", ".iso", ".dmg", ".pkg", ".deb", ".rpm", ".tgz"], "keywords": ["archive", "compressed", "backup", "zip", "bundle"]},
-    {"name": "Installers", "extensions": [".exe", ".msi", ".msp", ".msu", ".appx", ".appxbundle", ".deb", ".rpm", ".dmg", ".pkg", ".snap", ".flatpak"], "keywords": ["install", "setup", "installer", "wizard", "update", "upgrade", "vcredist", "runtime"]},
-    {"name": "Backups", "extensions": [".bak", ".old", ".orig", ".backup", ".dump", ".save", ".swp", ".tmp"], "keywords": ["backup", "bak", "old", "copy", "dump", "snapshot", "restore"]},
-    {"name": "Miscellaneous", "extensions": [], "keywords": []}
+    {
+      "name": "Documents",
+      "extensions": [
+        ".pdf",
+        ".doc",
+        ".docx",
+        ".txt",
+        ".rtf",
+        ".odt",
+        ".pages",
+        ".md",
+        ".tex",
+        ".wps"
+      ],
+      "keywords": [
+        "document",
+        "report",
+        "letter",
+        "memo",
+        "notes",
+        "resume",
+        "cv",
+        "contract",
+        "invoice",
+        "specification",
+        "proposal",
+        "draft"
+      ]
+    },
+    {
+      "name": "Finance",
+      "extensions": [
+        ".xls",
+        ".xlsx",
+        ".csv",
+        ".qfx",
+        ".qbo",
+        ".ofx",
+        ".tax",
+        ".money",
+        ".qb2019"
+      ],
+      "keywords": [
+        "bank",
+        "statement",
+        "finance",
+        "budget",
+        "tax",
+        "invoice",
+        "payment",
+        "receipt",
+        "account",
+        "transaction",
+        "salary",
+        "payroll",
+        "expense",
+        "investment",
+        "portfolio"
+      ]
+    },
+    {
+      "name": "Pictures",
+      "extensions": [
+        ".jpg",
+        ".jpeg",
+        ".png",
+        ".gif",
+        ".bmp",
+        ".tiff",
+        ".tif",
+        ".webp",
+        ".heic",
+        ".raw",
+        ".cr2",
+        ".nef",
+        ".arw",
+        ".dng",
+        ".svg",
+        ".ico"
+      ],
+      "keywords": [
+        "photo",
+        "image",
+        "picture",
+        "screenshot",
+        "wallpaper",
+        "avatar",
+        "img",
+        "camera",
+        "dsc"
+      ]
+    },
+    {
+      "name": "Videos",
+      "extensions": [
+        ".mp4",
+        ".mkv",
+        ".avi",
+        ".mov",
+        ".wmv",
+        ".flv",
+        ".webm",
+        ".m4v",
+        ".mpg",
+        ".mpeg",
+        ".3gp",
+        ".ts",
+        ".vob"
+      ],
+      "keywords": [
+        "video",
+        "movie",
+        "clip",
+        "recording",
+        "capture",
+        "film",
+        "trailer",
+        "tutorial",
+        "cam"
+      ]
+    },
+    {
+      "name": "Music",
+      "extensions": [
+        ".mp3",
+        ".flac",
+        ".wav",
+        ".aac",
+        ".ogg",
+        ".wma",
+        ".m4a",
+        ".alac",
+        ".aiff",
+        ".opus"
+      ],
+      "keywords": [
+        "music",
+        "song",
+        "audio",
+        "track",
+        "album",
+        "playlist",
+        "podcast",
+        "sound",
+        "beat"
+      ]
+    },
+    {
+      "name": "Downloads",
+      "extensions": [".crdownload", ".part", ".download"],
+      "keywords": ["download", "temp", "partial"]
+    },
+    {
+      "name": "Android",
+      "extensions": [".apk", ".xapk", ".apks", ".aab", ".dex"],
+      "keywords": ["android", "apk", "app", "mobile", "google play", "sideload"]
+    },
+    {
+      "name": "GitHub",
+      "extensions": [".git", ".gitignore", ".gitattributes", ".gitmodules"],
+      "keywords": [
+        "github",
+        "git",
+        "repo",
+        "repository",
+        "clone",
+        "commit",
+        "branch",
+        "readme",
+        "license"
+      ]
+    },
+    {
+      "name": "Projects",
+      "extensions": [
+        ".py",
+        ".js",
+        ".ts",
+        ".java",
+        ".cpp",
+        ".c",
+        ".h",
+        ".hpp",
+        ".cs",
+        ".go",
+        ".rs",
+        ".rb",
+        ".php",
+        ".swift",
+        ".kt",
+        ".dart",
+        ".lua",
+        ".r",
+        ".scala",
+        ".sh",
+        ".bat",
+        ".ps1",
+        ".sql",
+        ".html",
+        ".css",
+        ".scss",
+        ".less",
+        ".vue",
+        ".jsx",
+        ".tsx",
+        ".json",
+        ".yaml",
+        ".yml",
+        ".xml",
+        ".toml",
+        ".ini",
+        ".cfg",
+        ".conf",
+        ".makefile",
+        ".cmake",
+        ".gradle",
+        ".sln",
+        ".proj",
+        ".vcxproj"
+      ],
+      "keywords": [
+        "project",
+        "source",
+        "code",
+        "script",
+        "build",
+        "compile",
+        "package",
+        "module",
+        "library",
+        "framework",
+        "app",
+        "program",
+        "solution"
+      ]
+    },
+    {
+      "name": "eBooks",
+      "extensions": [
+        ".epub",
+        ".mobi",
+        ".azw",
+        ".azw3",
+        ".kf8",
+        ".pdb",
+        ".fb2",
+        ".lit",
+        ".lrf"
+      ],
+      "keywords": [
+        "ebook",
+        "book",
+        "novel",
+        "kindle",
+        "epub",
+        "chapter",
+        "author",
+        "isbn"
+      ]
+    },
+    {
+      "name": "Archives",
+      "extensions": [
+        ".zip",
+        ".rar",
+        ".7z",
+        ".tar",
+        ".gz",
+        ".bz2",
+        ".xz",
+        ".lzma",
+        ".cab",
+        ".iso",
+        ".dmg",
+        ".pkg",
+        ".deb",
+        ".rpm",
+        ".tgz"
+      ],
+      "keywords": ["archive", "compressed", "backup", "zip", "bundle"]
+    },
+    {
+      "name": "Installers",
+      "extensions": [
+        ".exe",
+        ".msi",
+        ".msp",
+        ".msu",
+        ".appx",
+        ".appxbundle",
+        ".deb",
+        ".rpm",
+        ".dmg",
+        ".pkg",
+        ".snap",
+        ".flatpak"
+      ],
+      "keywords": [
+        "install",
+        "setup",
+        "installer",
+        "wizard",
+        "update",
+        "upgrade",
+        "vcredist",
+        "runtime"
+      ]
+    },
+    {
+      "name": "Backups",
+      "extensions": [
+        ".bak",
+        ".old",
+        ".orig",
+        ".backup",
+        ".dump",
+        ".save",
+        ".swp",
+        ".tmp"
+      ],
+      "keywords": [
+        "backup",
+        "bak",
+        "old",
+        "copy",
+        "dump",
+        "snapshot",
+        "restore"
+      ]
+    },
+    {
+      "name": "RPG - Dungeons & Dragons",
+      "extensions": [".pdf", ".epub", ".docx", ".txt", ".md", ".rtf", ".odt"],
+      "keywords": [
+        "D&D",
+        "5e",
+        "5.5e",
+        "Wizards of the Coast",
+        "Player's Handbook",
+        "Dungeon Master's Guide",
+        "Monster Manual"
+      ]
+    },
+    {
+      "name": "RPG - Pathfinder",
+      "extensions": [".pdf", ".epub", ".docx", ".txt", ".md", ".rtf", ".odt"],
+      "keywords": [
+        "Pathfinder",
+        "Paizo",
+        "Golarion",
+        "Core Rulebook",
+        "Adventure Path"
+      ]
+    },
+    {
+      "name": "RPG - Other Systems",
+      "extensions": [".pdf", ".epub", ".docx", ".txt", ".md", ".rtf", ".odt"],
+      "keywords": [
+        "Call of Cthulhu",
+        "Shadowrun",
+        "Traveller",
+        "Warhammer",
+        "Cyberpunk RED"
+      ]
+    },
+    {
+      "name": "RPG - Adventures & Campaigns",
+      "extensions": [".pdf", ".epub", ".docx", ".txt", ".md", ".rtf", ".odt"],
+      "keywords": [
+        "adventure",
+        "campaign",
+        "scenario",
+        "module",
+        "quest",
+        "encounters"
+      ]
+    },
+    {
+      "name": "RPG - Game Master Resources",
+      "extensions": [".pdf", ".epub", ".docx", ".txt", ".md", ".rtf", ".odt"],
+      "keywords": [
+        "GM guide",
+        "game master",
+        "NPC",
+        "worldbuilding",
+        "random tables",
+        "encounter design"
+      ]
+    },
+    {
+      "name": "Software - C# & .NET",
+      "extensions": [".pdf", ".epub", ".docx", ".txt", ".md", ".rtf", ".odt"],
+      "keywords": ["C#", ".NET", "ASP.NET Core", "Entity Framework", "Blazor"]
+    },
+    {
+      "name": "Software - Vue.js",
+      "extensions": [".pdf", ".epub", ".docx", ".txt", ".md", ".rtf", ".odt"],
+      "keywords": [
+        "Vue 3",
+        "Vue Router",
+        "Pinia",
+        "Composition API",
+        "single file component"
+      ]
+    },
+    {
+      "name": "Software - TypeScript",
+      "extensions": [".pdf", ".epub", ".docx", ".txt", ".md", ".rtf", ".odt"],
+      "keywords": ["TypeScript", "generics", "static typing", "type inference"]
+    },
+    {
+      "name": "Software - JavaScript",
+      "extensions": [".pdf", ".epub", ".docx", ".txt", ".md", ".rtf", ".odt"],
+      "keywords": ["JavaScript", "ECMAScript", "Node.js", "ES modules"]
+    },
+    {
+      "name": "Software - Web Development",
+      "extensions": [".pdf", ".epub", ".docx", ".txt", ".md", ".rtf", ".odt"],
+      "keywords": ["HTML", "CSS", "frontend", "web design", "accessibility"]
+    },
+    {
+      "name": "Software - Architecture",
+      "extensions": [".pdf", ".epub", ".docx", ".txt", ".md", ".rtf", ".odt"],
+      "keywords": [
+        "design patterns",
+        "domain-driven design",
+        "DDD",
+        "microservices",
+        "SOLID"
+      ]
+    },
+    {
+      "name": "Software - Security",
+      "extensions": [".pdf", ".epub", ".docx", ".txt", ".md", ".rtf", ".odt"],
+      "keywords": [
+        "OWASP",
+        "application security",
+        "cryptography",
+        "penetration testing",
+        "cybersecurity"
+      ]
+    },
+    {
+      "name": "Game Development - Unity",
+      "extensions": [".pdf", ".epub", ".docx", ".txt", ".md", ".rtf", ".odt"],
+      "keywords": [
+        "Unity",
+        "Unity Engine",
+        "C# game development",
+        "Unity 2D",
+        "Shader Graph"
+      ]
+    },
+    {
+      "name": "Game Development - General",
+      "extensions": [".pdf", ".epub", ".docx", ".txt", ".md", ".rtf", ".odt"],
+      "keywords": [
+        "game programming",
+        "Godot",
+        "Unreal Engine",
+        "game engine",
+        "rendering"
+      ]
+    },
+    {
+      "name": "Game Design",
+      "extensions": [".pdf", ".epub", ".docx", ".txt", ".md", ".rtf", ".odt"],
+      "keywords": [
+        "game mechanics",
+        "level design",
+        "balancing",
+        "game design",
+        "gameplay systems"
+      ]
+    },
+    {
+      "name": "Fiction - Fantasy",
+      "extensions": [".pdf", ".epub", ".docx", ".txt", ".md", ".rtf", ".odt"],
+      "keywords": ["fantasy", "fantasy novel", "magic", "sword and sorcery"]
+    },
+    {
+      "name": "Fiction - Science Fiction",
+      "extensions": [".pdf", ".epub", ".docx", ".txt", ".md", ".rtf", ".odt"],
+      "keywords": ["science fiction", "sci-fi", "space opera", "cyberpunk"]
+    },
+    {
+      "name": "Reference & Manuals",
+      "extensions": [".pdf", ".epub", ".docx", ".txt", ".md", ".rtf", ".odt"],
+      "keywords": [
+        "reference",
+        "handbook",
+        "user guide",
+        "manual",
+        "technical reference"
+      ]
+    },
+    {
+      "name": "Miscellaneous",
+      "extensions": [],
+      "keywords": []
+    }
   ]
 }

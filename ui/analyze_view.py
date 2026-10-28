@@ -156,14 +156,14 @@ class AnalyzeWorker(QThread):
                     # Read content for documents
                     content_summary = None
                     try:
-                        content_summary = self.content_reader.read_summary(file_path, max_length=500)
+                        content_summary = self.content_reader.read_summary(file_path, max_length=3000)
                     except Exception:
                         pass
 
                     # OCR for scanned PDFs (if enabled)
                     if not content_summary and self.ocr.is_available():
                         try:
-                            content_summary = self.ocr.extract_text(file_path, max_length=500)
+                            content_summary = self.ocr.extract_text(file_path, max_length=3000)
                         except Exception:
                             pass
 

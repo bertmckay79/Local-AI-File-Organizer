@@ -167,9 +167,9 @@ class SettingsView(QWidget):
         # ── Geocoding Settings ──
         geo_group = QGroupBox("📍 GPS Geocoding Provider")
         geo_layout = QFormLayout(geo_group)
-        ai_layout.addWidget(geo_group)
+        layout.addWidget(geo_group)
 
-        geo_cfg = config.get("geocoding", {})
+        geo_cfg = self.config_manager.config.get("geocoding", {})
         self.geo_provider = QComboBox()
         self.geo_provider.addItem("Nominatim (Free, OpenStreetMap)", "nominatim")
         self.geo_provider.addItem("BigDataCloud (Free, no key)", "bigdatacloud")
@@ -220,7 +220,7 @@ class SettingsView(QWidget):
         # ── AI Chat Test Box ──
         chat_group = QGroupBox("💬 Test AI Chat")
         chat_layout = QVBoxLayout(chat_group)
-        ai_layout.addWidget(chat_group)
+        layout.addWidget(chat_group)
 
         chat_help = QLabel(
             "Type a message to test if your AI model is working.\n"

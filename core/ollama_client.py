@@ -330,7 +330,7 @@ class OllamaClient:
         if metadata:
             prompt_parts.append(f"Metadata: {json.dumps(metadata, indent=2)}")
         if content_summary:
-            prompt_parts.append(f"Content summary: {content_summary[:500]}")
+            prompt_parts.append(f"Content summary: {content_summary[:3000]}")
 
         prompt_parts.append(f"\nAvailable categories: {categories_str}")
         prompt_parts.append(
@@ -339,6 +339,15 @@ class OllamaClient:
             "configured category list. If uncertain, return Miscellaneous."
         )
         prompt_parts.append('\nReturn JSON only: {"category": "<category_name>"}')
+
+        prompt_parts.append(
+            "Classify documents primarily by their subject matter, "
+            "not their extension. Prefer specific RPG, software, "
+            "game development or fiction categories over generic "
+            "Documents and eBooks categories. "
+            "Only use generic categories when no specific "
+            "category is appropriate."
+        )
 
         prompt = "\n".join(prompt_parts)
         system_msg = (
