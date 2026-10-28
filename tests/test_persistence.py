@@ -12,8 +12,18 @@ from utils.config import ConfigManager
 
 @pytest.fixture
 def data_dir(monkeypatch, tmp_path):
+    """Keep tests from discovering and copying any real user database/config.
+
+    The production app deliberately migrates an existing checkout database.
+    These tests must emulate a *clean install* unless a test explicitly
+    creates a legacy database and overrides the candidate list.
+    """
     destination = tmp_path / "user_data"
+    empty_install = tmp_path / "empty_legacy_install"
+    empty_install.mkdir()
     monkeypatch.setenv("LOCAL_AI_FILE_ORGANIZER_DATA_DIR", str(destination))
+    monkeypatch.setattr(storage, "PROJECT_ROOT", empty_install)
+    monkeypatch.chdir(tmp_path)
     return destination
 
 
@@ -96,13 +106,18 @@ def test_storage_uses_localappdata_on_windows(monkeypatch, tmp_path):
 
 
 def test_new_install_creates_writable_database_directory(data_dir):
+    """A genuinely new install has no index; legacy import is tested separately."""
     from database.db_manager import DatabaseManager
+
     path = storage.resolve_database_path()
-    db = DatabaseManager(path)
     assert path == data_dir / "file_organizer.db"
-    assert path.exists()
-    assert db.get_all_files() == []
-    db.disconnect()
+    db = DatabaseManager(path)
+    try:
+        assert path.exists()
+        assert db.get_all_files() == []
+        assert db.get_custom_categories() == []
+    finally:
+        db.disconnect()
 
 
 def test_migrate_real_sqlite_database_and_reopen_with_existing_categories(
