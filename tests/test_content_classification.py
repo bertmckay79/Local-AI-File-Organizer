@@ -1,0 +1,100 @@
+"""Regression tests for PDF/EPUB extraction and safe classification."""
+import json
+import zipfile
+from unittest.mock import Mock
+
+import pytest
+
+from core.document_classifier import (
+    DocumentClassificationService, NEEDS_REVIEW,
+    extract_pdf_evidence, extract_epub_evidence, load_category_definitions
+)
+
+CATS = [
+    {"name": "Documents", "keywords": []},
+    {"name": "eBooks", "keywords": []},
+    {"name": "Software - Vue.js", "keywords": ["Pinia", "Composition API"]},
+    {"name": "RPG - Dungeons & Dragons", "keywords": ["Player's Handbook"]},
+    {"name": "Miscellaneous", "keywords": []},
+]
+
+
+def classifier(response, extension=".pdf", content=None):
+    ai = Mock()
+    ai.classify_file.return_value = response
+    reader = Mock()
+    metadata = Mock()
+    metadata.extract.return_value = {}
+    ocr = Mock()
+    ocr.is_available.return_value = False
+    service = DocumentClassificationService(ai, reader, metadata, ocr, CATS)
+    return service, {"file_path": "missing" + extension, "file_name": "missing" + extension,
+                     "extension": extension}
+
+
+def test_pdf_content_category(monkeypatch):
+    monkeypatch.setattr("core.document_classifier.extract_pdf_evidence", lambda p: "Vue 3 Pinia")
+    service, file = classifier("Software - Vue.js")
+    result = service.classify(file)
+    assert result.category == "Software - Vue.js" and not result.requires_review
+    assert service.ollama.classify_file.call_args.kwargs["category_details"] == CATS
+
+
+@pytest.mark.parametrize("category", ["Documents", "eBooks", "Miscellaneous", None])
+def test_generic_result_needs_review(monkeypatch, category):
+    monkeypatch.setattr("core.document_classifier.extract_pdf_evidence", lambda p: "Vue 3")
+    service, file = classifier(category)
+    assert service.classify(file).category == NEEDS_REVIEW
+
+
+def test_unreadable_pdf_needs_review():
+    service, file = classifier("RPG - Dungeons & Dragons")
+    assert service.classify(file).category == NEEDS_REVIEW
+
+
+def test_ollama_exception_needs_review(monkeypatch):
+    monkeypatch.setattr("core.document_classifier.extract_pdf_evidence", lambda p: "D&D rules")
+    service, file = classifier(None)
+    service.ollama.classify_file.side_effect = ConnectionError("unavailable")
+    assert service.classify(file).category == NEEDS_REVIEW
+
+
+def test_load_categories_includes_keywords_and_deduplicates(tmp_path):
+    config = tmp_path / "categories.json"
+    config.write_text(json.dumps({"categories": CATS}), encoding="utf-8")
+    db = Mock()
+    db.get_custom_categories.return_value = [{"name": "software - vue.js"}, {"name": "Game Design"}]
+    result = load_category_definitions(config, db)
+    assert len([x for x in result if x["name"].casefold() == "software - vue.js"]) == 1
+    assert next(x for x in result if x["name"] == "Software - Vue.js")["keywords"] == ["Pinia", "Composition API"]
+    assert any(x["name"] == NEEDS_REVIEW for x in result)
+
+
+def test_pdf_evidence_samples_later_pages(tmp_path):
+    fitz = pytest.importorskip("fitz")
+    file = tmp_path / "book.pdf"
+    with fitz.open() as doc:
+        for i in range(12):
+            page = doc.new_page()
+            page.insert_text((72, 72), "Pinia Composition API" if i == 6 else f"Page {i}")
+        doc.save(str(file))
+    assert "Pinia Composition API" in extract_pdf_evidence(file)
+
+
+def test_epub_spine_order_and_metadata(tmp_path):
+    file = tmp_path / "book.epub"
+    container = ('<container><rootfiles><rootfile full-path="OPS/package.opf"/></rootfiles></container>')
+    opf = ('<package xmlns="http://www.idpf.org/2007/opf">'
+           '<metadata xmlns:dc="http://purl.org/dc/elements/1.1/">'
+           '<dc:title>TypeScript Handbook</dc:title></metadata>'
+           '<manifest><item id="one" href="one.xhtml"/>'
+           '<item id="two" href="two.xhtml"/></manifest>'
+           '<spine><itemref idref="two"/><itemref idref="one"/></spine></package>')
+    with zipfile.ZipFile(file, "w") as archive:
+        archive.writestr("META-INF/container.xml", container)
+        archive.writestr("OPS/package.opf", opf)
+        archive.writestr("OPS/one.xhtml", "<html><body>Other text</body></html>")
+        archive.writestr("OPS/two.xhtml", "<html><body>Type inference with generics</body></html>")
+    text = extract_epub_evidence(file)
+    assert "TypeScript Handbook" in text
+    assert text.index("Type inference") < text.index("Other text")
