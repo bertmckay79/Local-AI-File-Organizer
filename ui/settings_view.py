@@ -561,6 +561,18 @@ class SettingsView(QWidget):
         self.ocr_pages.setValue(ocr.get("max_pages", 10))
         layout.addRow("OCR Max Pages:", self.ocr_pages)
 
+        self.book_lookup_enabled = QCheckBox(
+            "Suggest categories using Open Library ISBN/title search (online)"
+        )
+        self.book_lookup_enabled.setChecked(
+            self.config_manager.config.get("book_lookup", {}).get("external_enabled", False)
+        )
+        self.book_lookup_enabled.setToolTip(
+            "For Needs Review books only: send the ISBN or inferred title "
+            "to Open Library. No full book text is uploaded. Off by default."
+        )
+        layout.addRow("", self.book_lookup_enabled)
+
         self.empty_folders = QCheckBox("Empty folder detection")
         self.empty_folders.setChecked(adv.get("empty_folder_detection", True))
         layout.addRow("", self.empty_folders)
@@ -961,6 +973,9 @@ class SettingsView(QWidget):
         config["ocr"]["enabled"] = self.ocr_enabled.isChecked()
         config["ocr"]["language"] = self.ocr_lang.text().strip()
         config["ocr"]["max_pages"] = self.ocr_pages.value()
+        config.setdefault("book_lookup", {})["external_enabled"] = (
+            self.book_lookup_enabled.isChecked()
+        )
         config["advanced"]["empty_folder_detection"] = self.empty_folders.isChecked()
         config["advanced"]["large_file_threshold_mb"] = self.large_threshold.value()
         config["advanced"]["disk_usage_analysis"] = self.disk_analysis.isChecked()

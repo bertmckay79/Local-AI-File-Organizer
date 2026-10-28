@@ -105,5 +105,8 @@
     "geonames_user": "",
     "language": "en",
     "timeout": 10
+  },
+  "book_lookup": {
+    "external_enabled": false
   }
 }

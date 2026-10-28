@@ -166,7 +166,8 @@ class QuickOrganizeWorker(QThread):
         categories = [c["name"] for c in definitions]
         rule_classifier = RuleBasedClassifier(categories)
         classifier = DocumentClassificationService(
-            self.ollama, self.content_reader, self.metadata_extractor, self.ocr, definitions
+            self.ollama, self.content_reader, self.metadata_extractor, self.ocr, definitions,
+            lookup_enabled=self.config.get("book_lookup", {}).get("external_enabled", False),
         )
         file_categories = {}
         total = len(files)
@@ -188,7 +189,10 @@ class QuickOrganizeWorker(QThread):
                 file_data["analyzed_at"] = json.dumps({
                     "method": "ai",
                     "requires_review": decision.requires_review,
-                    "reason": decision.reason
+                    "reason": decision.reason,
+                    "suggested_category": decision.suggested_category,
+                    "book_isbn": decision.book_isbn,
+                    "book_title": decision.book_title,
                 })
                 if decision.requires_review:
                     self.logger.warning("Quick Organize skipped %s: %s",

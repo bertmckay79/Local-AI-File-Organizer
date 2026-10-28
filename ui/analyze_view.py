@@ -108,10 +108,12 @@ class AnalyzeWorker(QThread):
     def __init__(self, files: list[dict], categories: list[str],
                  ollama: OllamaClient, metadata_extractor: MetadataExtractor,
                  content_reader: ContentReader, ocr: OCRProcessor, db: DatabaseManager,
-                 use_ai: bool = True, category_definitions: list[dict] = None):
+                 use_ai: bool = True, category_definitions: list[dict] = None,
+                 lookup_enabled: bool = False):
         super().__init__()
         self.files = files
         self.categories = categories
+        self.lookup_enabled = lookup_enabled
         self.category_definitions = category_definitions or [
             {"name": name, "keywords": []} for name in categories
         ]
@@ -143,7 +145,8 @@ class AnalyzeWorker(QThread):
         rule_classifier = RuleBasedClassifier(self.categories)
         classifier = DocumentClassificationService(
             self.ollama, self.content_reader, self.metadata_extractor,
-            self.ocr, self.category_definitions
+            self.ocr, self.category_definitions,
+            lookup_enabled=self.lookup_enabled,
         )
 
         for file_data in self.files:
@@ -167,7 +170,10 @@ class AnalyzeWorker(QThread):
                     file_data["analyzed_at"] = json.dumps({
                         "method": "ai",
                         "requires_review": decision.requires_review,
-                        "reason": decision.reason
+                        "reason": decision.reason,
+                        "suggested_category": decision.suggested_category,
+                        "book_isbn": decision.book_isbn,
+                        "book_title": decision.book_title,
                     })
                     if decision.requires_review:
                         self.logger.warning("Review required for %s: %s",
@@ -430,7 +436,8 @@ class AnalyzeView(QWidget):
         self.analyze_worker = AnalyzeWorker(
             self.files_to_analyze, categories, self.ollama,
             self.metadata_extractor, self.content_reader, self.ocr,
-            self.db, use_ai=use_ai, category_definitions=definitions
+            self.db, use_ai=use_ai, category_definitions=definitions,
+            lookup_enabled=self.config.get("book_lookup", {}).get("external_enabled", False),
         )
         self.analyze_worker.progress.connect(self._on_progress)
         self.analyze_worker.file_analyzed.connect(self._on_file_analyzed)

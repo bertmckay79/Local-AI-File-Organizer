@@ -11,6 +11,8 @@ from pathlib import Path
 from urllib.parse import unquote
 from xml.etree import ElementTree
 
+from core.book_identifier import identify_and_suggest
+
 NEEDS_REVIEW = "Needs Review"
 BOOK_EXTS = {".pdf", ".epub"}
 GENERIC_BOOK_CATEGORIES = {"documents", "ebooks", "miscellaneous", "reference & manuals"}
@@ -165,18 +167,52 @@ class ClassificationDecision:
     metadata: dict
     content_summary: str | None
     requires_review: bool = False
+    suggested_category: str | None = None
+    book_isbn: str | None = None
+    book_title: str | None = None
 
 
 class DocumentClassificationService:
     """Single classifier shared by Analyze and Quick Organize."""
 
-    def __init__(self, ollama, reader, metadata_extractor, ocr, definitions):
+    def __init__(self, ollama, reader, metadata_extractor, ocr, definitions,
+                 lookup_enabled: bool = False):
+        self.lookup_enabled = lookup_enabled
         self.ollama = ollama
         self.reader = reader
         self.metadata_extractor = metadata_extractor
         self.ocr = ocr
         self.definitions = definitions
         self.category_names = [d["name"] for d in definitions]
+
+    def _review(self, file_data: dict, extension: str, metadata: dict,
+                evidence: str | None, reason: str) -> ClassificationDecision:
+        """Record an ISBN/title-based suggestion; never auto-accept it."""
+        if extension not in BOOK_EXTS:
+            return ClassificationDecision(NEEDS_REVIEW, reason, metadata, evidence, True)
+        try:
+            identity, suggestion = identify_and_suggest(
+                file_data.get("file_name") or Path(file_data.get("file_path", "")).name,
+                metadata, evidence, self.definitions, extension,
+                external_lookup=self.lookup_enabled,
+            )
+            suffix = f" | Book: {identity.title}" if identity.title else ""
+            if identity.isbn:
+                suffix += f" | ISBN: {identity.isbn}"
+            if suggestion:
+                suffix += (
+                    f" | Suggested category: {suggestion.category}"
+                    f" ({suggestion.explanation}; {identity.source})"
+                )
+            return ClassificationDecision(
+                NEEDS_REVIEW, reason + suffix, metadata, evidence, True,
+                suggested_category=suggestion.category if suggestion else None,
+                book_isbn=identity.isbn, book_title=identity.title or None,
+            )
+        except Exception as exc:
+            logger.warning("Book identification failed for %s: %s",
+                           file_data.get("file_path", ""), exc)
+            return ClassificationDecision(NEEDS_REVIEW, reason, metadata, evidence, True)
 
     def classify(self, file_data):
         path = file_data.get("file_path", "")
@@ -206,9 +242,9 @@ class DocumentClassificationService:
                 logger.warning("OCR failed for %s: %s", path, exc)
 
         if extension in BOOK_EXTS and not content:
-            return ClassificationDecision(
-                NEEDS_REVIEW, "No readable document text; check PDF OCR or EPUB file",
-                metadata, content, True
+            return self._review(
+                file_data, extension, metadata, content,
+                "No readable document text; check PDF OCR or EPUB file",
             )
 
         file_info = {
@@ -223,9 +259,9 @@ class DocumentClassificationService:
             )
         except Exception as exc:
             logger.warning("AI classification failed for %s: %s", path, exc)
-            return ClassificationDecision(
-                NEEDS_REVIEW, f"AI request failed: {type(exc).__name__}: {str(exc)[:120]}",
-                metadata, content, True
+            return self._review(
+                file_data, extension, metadata, content,
+                f"AI request failed: {type(exc).__name__}: {str(exc)[:120]}",
             )
 
         # Retry generic book categories once, using only subject categories.
@@ -260,4 +296,4 @@ class DocumentClassificationService:
             return ClassificationDecision(category, "AI subject classification", metadata, content)
 
         logger.warning("Classification needs review for %s: %s", path, reason)
-        return ClassificationDecision(NEEDS_REVIEW, reason, metadata, content, True)
+        return self._review(file_data, extension, metadata, content, reason)
