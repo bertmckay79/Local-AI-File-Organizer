@@ -117,5 +117,6 @@ def resolve_database_path(value: str | os.PathLike | None = None) -> Path:
     if ".." in raw.parts:
         raise ValueError("Relative database path cannot leave the application data directory")
     destination = app_data_path(str(raw))
+    destination.parent.mkdir(parents=True, exist_ok=True)
     migrate_legacy_file(destination, _legacy_candidates(raw), sqlite_db=True)
     return destination

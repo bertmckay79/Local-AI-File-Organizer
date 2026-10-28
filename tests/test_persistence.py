@@ -92,3 +92,48 @@ def test_storage_uses_localappdata_on_windows(monkeypatch, tmp_path):
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.setattr(storage.sys, "platform", "win32")
     assert storage.get_data_dir() == tmp_path / "LocalAIFileOrganizer"
+
+
+
+def test_new_install_creates_writable_database_directory(data_dir):
+    from database.db_manager import DatabaseManager
+    path = storage.resolve_database_path()
+    db = DatabaseManager(path)
+    assert path == data_dir / "file_organizer.db"
+    assert path.exists()
+    assert db.get_all_files() == []
+    db.disconnect()
+
+
+def test_migrate_real_sqlite_database_and_reopen_with_existing_categories(
+    data_dir, tmp_path, monkeypatch
+):
+    from database.db_manager import DatabaseManager
+    legacy = tmp_path / "old_install" / "file_organizer.db"
+    legacy.parent.mkdir()
+    db = DatabaseManager(legacy)
+    db.add_custom_category(
+        "Crafts / Model Painting", [".pdf"], ["minis", "painting"]
+    )
+    db.upsert_file({
+        "file_path": "D:/Books/mini-painting.pdf",
+        "file_name": "mini-painting.pdf", "extension": ".pdf",
+        "category": "RPG / Game Master Resources", "size_bytes": 400,
+    })
+    db.disconnect()
+
+    monkeypatch.setattr(storage, "_legacy_candidates", lambda relative: [legacy])
+    moved_path = storage.resolve_database_path()
+    assert moved_path == data_dir / "file_organizer.db"
+    reopened = DatabaseManager(moved_path)
+    assert reopened.get_custom_categories()[0]["name"] == "Crafts / Model Painting"
+    assert reopened.get_file_by_path("D:/Books/mini-painting.pdf")["size_bytes"] == 400
+    reopened.disconnect()
+
+    # A second startup must not replace migrated data with old source values.
+    old = DatabaseManager(legacy)
+    old.delete_custom_category("Crafts / Model Painting")
+    old.disconnect()
+    again = DatabaseManager(storage.resolve_database_path())
+    assert again.get_custom_categories()[0]["name"] == "Crafts / Model Painting"
+    again.disconnect()
