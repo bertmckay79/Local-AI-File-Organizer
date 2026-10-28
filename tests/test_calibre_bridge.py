@@ -178,7 +178,7 @@ def test_ebook_inside_calibre_library_is_skipped(monkeypatch, tmp_path):
     bridge = CalibreBridge({"enabled": True, "library_path": str(library)})
     monkeypatch.setattr(bridge, "_validate", lambda: None)
     monkeypatch.setattr(bridge, "_identify", lambda p: pytest.fail("Should not inspect"))
-    assert bridge.process(path).status == "skipped"
+    assert bridge.process(path).status == "review"
 
 
 def test_fresh_import_is_not_marked_duplicate():
@@ -241,6 +241,37 @@ def test_organizer_refuses_to_move_imported_calibre_ebook(tmp_path):
     success, reason, operation = organizer.move_file(str(ebook), "eBooks")
     assert not success
     assert "Calibre-managed" in reason
+    assert ebook.is_file()
+    assert operation is None
+    db.disconnect()
+
+
+
+def test_calibre_library_source_not_moved_even_if_manually_assigned(tmp_path):
+    from database.db_manager import DatabaseManager
+    from database.operations import OperationHistory
+    from core.organizer import FileOrganizer
+
+    library = tmp_path / "Calibre"
+    library.mkdir()
+    ebook = _book(library)
+    db = DatabaseManager(tmp_path / "cache.sqlite")
+    info = {
+        "file_path": str(ebook), "file_name": ebook.name,
+        "extension": ".epub", "category": "eBooks",
+    }
+    apply_calibre_result(info, CalibreResult(
+        "review", "Ebook is inside the managed Calibre library",
+        library=str(library)
+    ))
+    db.upsert_file(info)
+    organizer = FileOrganizer(
+        db, OperationHistory(db),
+        {"organize": {"output_base": str(tmp_path / "out")}}
+    )
+    ok, message, operation = organizer.move_file(str(ebook), "eBooks")
+    assert not ok
+    assert "inside Calibre library" in message
     assert ebook.is_file()
     assert operation is None
     db.disconnect()

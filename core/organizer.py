@@ -121,6 +121,14 @@ class FileOrganizer:
                 return False, "Calibre duplicate; original file was not moved", None
             if calibre_status in ("duplicate", "imported"):
                 return False, "Calibre-managed ebook; original file was not moved", None
+            try:
+                library = (details.get("calibre") or {}).get("library")
+                if library and src_path and Path(src_path).resolve().is_relative_to(
+                    Path(library).resolve()
+                ):
+                    return False, "Source is inside Calibre library; not moved", None
+            except (TypeError, ValueError, OSError, AttributeError):
+                pass
         try:
             fields = category_fields(category)
             category = category_key(fields["category"], fields["subcategory"])

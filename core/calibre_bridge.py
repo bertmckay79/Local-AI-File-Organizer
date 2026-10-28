@@ -219,7 +219,10 @@ class CalibreBridge:
             self._validate()
             # Avoid treating books inside the Calibre library as new imports.
             if path.resolve().is_relative_to(self.library.resolve()):
-                return CalibreResult("skipped", "Ebook is already inside Calibre library")
+                return CalibreResult(
+                    "review", "Ebook is inside the managed Calibre library; never move it",
+                    library=str(self.library),
+                )
             book = self._identify(path)
             if len(_norm(book.title)) < 5:
                 return CalibreResult("review", "Book title unavailable; cannot safely compare")
