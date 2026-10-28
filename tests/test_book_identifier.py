@@ -73,3 +73,13 @@ def test_openlibrary_rejects_bad_title_match(monkeypatch):
     value = openlibrary_lookup(BookIdentity("Book of Making"))
     assert value.subjects == ()
     assert value.source == "local"
+
+
+def test_isbn_extraction_stops_at_a_newline_before_year():
+    source = "ISBN-13: 978-0-306-40615-7\n2023 First printing"
+    assert extract_isbn({}, source) == "9780306406157"
+
+
+def test_isbn_10_can_be_followed_by_year():
+    source = "ISBN-10: 0-306-40615-2 2023"
+    assert extract_isbn({}, source) == "0306406152"

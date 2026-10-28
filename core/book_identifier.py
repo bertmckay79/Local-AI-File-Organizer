@@ -13,7 +13,9 @@ from pathlib import Path
 import requests
 
 logger = logging.getLogger(__name__)
-ISBN_RE = re.compile(r"\bISBN(?:-1[03])?\s*(?::|#)?\s*((?:97[89][\s-]*)?[0-9][0-9Xx\s-]{8,20})", re.I)
+ISBN_RE = re.compile(
+    r"\bISBN(?:[- ]?1[03])?\s*[:#]?\s*([0-9Xx](?:[ \t-]?[0-9Xx]){9,12})", re.I
+)
 GENERIC_NAMES = {"documents", "ebooks", "miscellaneous", "reference & manuals", "needs review"}
 CLEAN_SUFFIX = re.compile(
     r"(?i)[ _-]*(?:z[-_ ]?library|z[-_ ]?lib|1lib)(?:\.[a-z]{2,4})?.*$"
@@ -63,9 +65,13 @@ def extract_isbn(metadata: dict, evidence: str | None) -> str | None:
                     return cleaned
     # Only labelled ISBNs: avoid confusing unrelated 10/13-digit IDs with ISBNs.
     for match in ISBN_RE.finditer((evidence or "")[:7000]):
-        isbn = valid_isbn(match.group(1))
-        if isbn:
-            return isbn
+        digits = re.sub(r"[^0-9Xx]", "", match.group(1))
+        # Prefer a complete ISBN-13, but also allow ISBN-10 followed by
+        # adjacent page/year digits from a noisy PDF text extraction.
+        for candidate in (digits[:13], digits[:10]):
+            isbn = valid_isbn(candidate)
+            if isbn:
+                return isbn
     return None
 
 
