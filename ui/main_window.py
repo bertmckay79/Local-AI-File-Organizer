@@ -38,6 +38,7 @@ from core.duplicate_finder import DuplicateFinder
 from core.metadata import MetadataExtractor
 from core.content_reader import ContentReader
 from core.ocr import OCRProcessor
+from core.category_hierarchy import full_category_from_record
 
 
 class MainWindow(QMainWindow):
@@ -99,6 +100,7 @@ class MainWindow(QMainWindow):
         self._init_toolbar()
         self._init_statusbar()
         self._apply_theme()
+        self._restore_indexed_session()
 
         self.logger.info("Application initialized successfully")
 
@@ -299,6 +301,40 @@ class MainWindow(QMainWindow):
         if folder:
             self.scan_view.add_scan_path(folder)
             self.status_bar.showMessage(f"Added: {folder}", 2000)
+
+    def _restore_indexed_session(self):
+        """Make previously analysed files available again after relaunch.
+
+        This only restores the preview and work queue. It never moves files.
+        Cap the restore to avoid blocking startup on large or networked libraries.
+        """
+        try:
+            previous = self.db.get_all_files(limit=2000)
+            existing = [
+                record for record in previous
+                if record.get("file_path") and Path(record["file_path"]).is_file()
+            ]
+            if not existing:
+                return
+            self.scanned_files = existing
+            self.analyze_view.set_files(existing)
+            confirmed = {}
+            for record in existing:
+                try:
+                    label = full_category_from_record(record)
+                except ValueError:
+                    continue
+                if label and label not in ("Needs Review", "Miscellaneous"):
+                    confirmed[record["file_path"]] = label
+            self.file_categories = confirmed
+            if confirmed:
+                self.organize_view.set_file_categories(confirmed)
+            self.file_count_label.setText(f"{len(existing)} indexed files")
+            self.status_bar.showMessage(
+                f"Restored {len(existing)} indexed files from previous sessions", 6000
+            )
+        except Exception as exc:
+            self.logger.warning("Could not restore previous file index: %s", exc)
 
     def _on_scan_complete(self, files: list[dict], total_size: int):
         """Handle scan completion."""
