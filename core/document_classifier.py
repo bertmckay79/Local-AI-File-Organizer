@@ -12,6 +12,7 @@ from urllib.parse import unquote
 from xml.etree import ElementTree
 
 from core.book_identifier import identify_and_suggest
+from core.category_hierarchy import normalise_definition, normalise_category
 
 NEEDS_REVIEW = "Needs Review"
 BOOK_EXTS = {".pdf", ".epub"}
@@ -30,12 +31,19 @@ def load_category_definitions(path, db=None):
             logger.warning("Failed to load custom categories: %s", exc)
     seen, unique = set(), []
     for item in definitions:
-        name = str(item.get("name", "")).strip()
-        if name and name.casefold() not in seen:
+        try:
+            standard = normalise_definition(item)
+        except ValueError as exc:
+            logger.warning("Skipping invalid category %r: %s", item.get("name"), exc)
+            continue
+        name = standard["name"]
+        if name.casefold() not in seen:
             seen.add(name.casefold())
-            unique.append(item)
+            unique.append(standard)
     if NEEDS_REVIEW.casefold() not in seen:
-        unique.append({"name": NEEDS_REVIEW, "keywords": [], "extensions": []})
+        unique.append(normalise_definition(
+            {"name": NEEDS_REVIEW, "keywords": [], "extensions": []}
+        ))
     return unique
 
 

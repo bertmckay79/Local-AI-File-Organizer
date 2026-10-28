@@ -363,7 +363,7 @@
       ]
     },
     {
-      "name": "RPG - Dungeons & Dragons",
+      "name": "Dungeons & Dragons",
       "extensions": [
         ".pdf",
         ".epub",
@@ -381,10 +381,11 @@
         "Player's Handbook",
         "Dungeon Master's Guide",
         "Monster Manual"
-      ]
+      ],
+      "parent": "RPG"
     },
     {
-      "name": "RPG - Pathfinder",
+      "name": "Pathfinder",
       "extensions": [
         ".pdf",
         ".epub",
@@ -400,10 +401,11 @@
         "Golarion",
         "Core Rulebook",
         "Adventure Path"
-      ]
+      ],
+      "parent": "RPG"
     },
     {
-      "name": "RPG - Other Systems",
+      "name": "Other Systems",
       "extensions": [
         ".pdf",
         ".epub",
@@ -419,10 +421,11 @@
         "Traveller",
         "Warhammer",
         "Cyberpunk RED"
-      ]
+      ],
+      "parent": "RPG"
     },
     {
-      "name": "RPG - Adventures & Campaigns",
+      "name": "Adventures & Campaigns",
       "extensions": [
         ".pdf",
         ".epub",
@@ -439,10 +442,11 @@
         "module",
         "quest",
         "encounters"
-      ]
+      ],
+      "parent": "RPG"
     },
     {
-      "name": "RPG - Game Master Resources",
+      "name": "Game Master Resources",
       "extensions": [
         ".pdf",
         ".epub",
@@ -459,10 +463,11 @@
         "worldbuilding",
         "random tables",
         "encounter design"
-      ]
+      ],
+      "parent": "RPG"
     },
     {
-      "name": "Software - C# & .NET",
+      "name": "C# & .NET",
       "extensions": [
         ".pdf",
         ".epub",
@@ -478,10 +483,11 @@
         "ASP.NET Core",
         "Entity Framework",
         "Blazor"
-      ]
+      ],
+      "parent": "Software"
     },
     {
-      "name": "Software - Vue.js",
+      "name": "Vue.js",
       "extensions": [
         ".pdf",
         ".epub",
@@ -497,10 +503,11 @@
         "Pinia",
         "Composition API",
         "single file component"
-      ]
+      ],
+      "parent": "Software"
     },
     {
-      "name": "Software - TypeScript",
+      "name": "TypeScript",
       "extensions": [
         ".pdf",
         ".epub",
@@ -515,10 +522,11 @@
         "generics",
         "static typing",
         "type inference"
-      ]
+      ],
+      "parent": "Software"
     },
     {
-      "name": "Software - JavaScript",
+      "name": "JavaScript",
       "extensions": [
         ".pdf",
         ".epub",
@@ -533,10 +541,11 @@
         "ECMAScript",
         "Node.js",
         "ES modules"
-      ]
+      ],
+      "parent": "Software"
     },
     {
-      "name": "Software - Web Development",
+      "name": "Web Development",
       "extensions": [
         ".pdf",
         ".epub",
@@ -552,10 +561,11 @@
         "frontend",
         "web design",
         "accessibility"
-      ]
+      ],
+      "parent": "Software"
     },
     {
-      "name": "Software - Architecture",
+      "name": "Architecture",
       "extensions": [
         ".pdf",
         ".epub",
@@ -571,10 +581,11 @@
         "DDD",
         "microservices",
         "SOLID"
-      ]
+      ],
+      "parent": "Software"
     },
     {
-      "name": "Software - Security",
+      "name": "Security",
       "extensions": [
         ".pdf",
         ".epub",
@@ -590,10 +601,11 @@
         "cryptography",
         "penetration testing",
         "cybersecurity"
-      ]
+      ],
+      "parent": "Software"
     },
     {
-      "name": "Game Development - Unity",
+      "name": "Unity",
       "extensions": [
         ".pdf",
         ".epub",
@@ -609,10 +621,35 @@
         "C# game development",
         "Unity 2D",
         "Shader Graph"
-      ]
+      ],
+      "parent": "Game Development"
     },
     {
-      "name": "Game Development - General",
+      "name": "Godot",
+      "parent": "Game Development",
+      "extensions": [
+        ".pdf",
+        ".epub",
+        ".docx",
+        ".txt",
+        ".md",
+        ".rtf",
+        ".odt"
+      ],
+      "keywords": [
+        "Godot",
+        "GDScript",
+        "Godot Engine",
+        "Godot 4",
+        "Node2D",
+        "Control nodes",
+        "GDExtension",
+        "scene tree"
+      ],
+      "description": "Godot engine, GDScript, scenes, nodes, and Godot game development guides"
+    },
+    {
+      "name": "General",
       "extensions": [
         ".pdf",
         ".epub",
@@ -628,7 +665,8 @@
         "Unreal Engine",
         "game engine",
         "rendering"
-      ]
+      ],
+      "parent": "Game Development"
     },
     {
       "name": "Game Design",
@@ -683,7 +721,7 @@
       ]
     },
     {
-      "name": "Fiction - Fantasy",
+      "name": "Fantasy",
       "extensions": [
         ".pdf",
         ".epub",
@@ -698,10 +736,11 @@
         "fantasy novel",
         "magic",
         "sword and sorcery"
-      ]
+      ],
+      "parent": "Fiction"
     },
     {
-      "name": "Fiction - Science Fiction",
+      "name": "Science Fiction",
       "extensions": [
         ".pdf",
         ".epub",
@@ -716,7 +755,8 @@
         "sci-fi",
         "space opera",
         "cyberpunk"
-      ]
+      ],
+      "parent": "Fiction"
     },
     {
       "name": "Reference & Manuals",

@@ -36,7 +36,7 @@ def test_pdf_content_category(monkeypatch):
     monkeypatch.setattr("core.document_classifier.extract_pdf_evidence", lambda p: "Vue 3 Pinia")
     service, file = classifier("Software - Vue.js")
     result = service.classify(file)
-    assert result.category == "Software - Vue.js" and not result.requires_review
+    assert result.category == "Software / Vue.js" and not result.requires_review
     assert service.ollama.classify_file.call_args.kwargs["category_details"] == CATS
 
 
@@ -65,8 +65,8 @@ def test_load_categories_includes_keywords_and_deduplicates(tmp_path):
     db = Mock()
     db.get_custom_categories.return_value = [{"name": "software - vue.js"}, {"name": "Game Design"}]
     result = load_category_definitions(config, db)
-    assert len([x for x in result if x["name"].casefold() == "software - vue.js"]) == 1
-    assert next(x for x in result if x["name"] == "Software - Vue.js")["keywords"] == ["Pinia", "Composition API"]
+    assert len([x for x in result if x["name"].casefold() == "software / vue.js"]) == 1
+    assert next(x for x in result if x["name"] == "Software / Vue.js")["keywords"] == ["Pinia", "Composition API"]
     assert any(x["name"] == NEEDS_REVIEW for x in result)
 
 
@@ -123,7 +123,7 @@ def test_ai_prompt_contains_category_keywords(monkeypatch):
         {"file_name": "vue.pdf", "extension": ".pdf"}, [c["name"] for c in CATS],
         "Vue Pinia", category_details=CATS
     )
-    assert actual == "Software - Vue.js"
+    assert actual == "Software / Vue.js"
     assert "Pinia, Composition API" in calls[0][0][1]["content"]
     assert calls[0][1]["num_predict"] >= 512
 
