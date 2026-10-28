@@ -7,6 +7,7 @@ import shutil
 import sqlite3
 import sys
 import tempfile
+from contextlib import closing
 from pathlib import Path
 
 APP_FOLDER = "LocalAIFileOrganizer"
@@ -44,7 +45,10 @@ def resolve_data_path(value: str | os.PathLike, default: str) -> Path:
 def _legacy_candidates(relative_path: str | Path) -> list[Path]:
     source = Path(relative_path)
     candidates = []
-    for base in (PROJECT_ROOT, Path.cwd()):
+    locations = [PROJECT_ROOT, Path.cwd()]
+    if getattr(sys, "frozen", False):
+        locations.append(Path(sys.executable).resolve().parent)
+    for base in locations:
         candidate = base / source
         if candidate not in candidates:
             candidates.append(candidate)
@@ -73,9 +77,10 @@ def migrate_legacy_file(target: Path, sources: list[Path], sqlite_db: bool = Fal
         staged = _staging_file(target)
         try:
             if sqlite_db:
-                with sqlite3.connect(f"file:{source.resolve().as_posix()}?mode=ro",
-                                     uri=True) as previous:
-                    with sqlite3.connect(str(staged)) as new:
+                # Connection context managers do not close SQLite connections.
+                # Explicit closure is essential before replacing a file on Windows.
+                with closing(sqlite3.connect(str(source))) as previous:
+                    with closing(sqlite3.connect(str(staged))) as new:
                         previous.backup(new)
             else:
                 shutil.copy2(source, staged)
@@ -94,10 +99,13 @@ def migrate_legacy_file(target: Path, sources: list[Path], sqlite_db: bool = Fal
 
 def migrate_legacy_config(config_file: Path | None = None) -> bool:
     dest = config_file or app_data_path("user_config.json")
-    return migrate_legacy_file(
-        dest, [PROJECT_ROOT / "config" / "user_config.json",
-               Path.cwd() / "config" / "user_config.json"],
-    )
+    sources = [
+        PROJECT_ROOT / "config" / "user_config.json",
+        Path.cwd() / "config" / "user_config.json",
+    ]
+    if getattr(sys, "frozen", False):
+        sources.append(Path(sys.executable).resolve().parent / "config" / "user_config.json")
+    return migrate_legacy_file(dest, sources)
 
 
 def resolve_database_path(value: str | os.PathLike | None = None) -> Path:

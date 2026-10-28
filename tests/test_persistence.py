@@ -72,7 +72,7 @@ def test_reset_only_deletes_settings_and_keeps_shared_dictionary(data_dir):
     config.reset()
     assert original is config.config
     assert config.get("ui", "theme") == "dark"
-    assert not (data_dir / "user_config.json").exists()
+    assert (data_dir / "user_config.json").exists()
 
 
 def test_user_config_saved_as_valid_json_with_no_temporary_files(data_dir):

@@ -79,9 +79,13 @@ class ConfigManager:
             self._config.update(deepcopy(candidate))
 
     def reset(self) -> dict:
-        """Reset settings using the same persistent path (without losing DB data)."""
-        self.config_path.unlink(missing_ok=True)
-        return self.load()
+        """Save defaults so legacy config is not re-imported on next launch."""
+        with open(DEFAULT_CONFIG_PATH, "r", encoding="utf-8") as f:
+            defaults = json.load(f)
+        self.save(defaults)
+        self._config.clear()
+        self._config.update(deepcopy(defaults))
+        return self._config
 
     def get(self, *keys, default=None):
         value = self._config
