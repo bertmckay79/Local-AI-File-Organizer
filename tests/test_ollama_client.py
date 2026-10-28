@@ -99,8 +99,8 @@ class TestOllamaClient:
         assert result == "Documents"
 
     @patch("core.ollama_client.requests.post")
-    def test_classify_file_fallback(self, mock_post, client):
-        """Test classification falls back to Miscellaneous on uncertain response."""
+    def test_classify_file_rejects_unknown_category(self, mock_post, client):
+        """Unknown AI categories return None for the review workflow to handle."""
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
@@ -112,7 +112,7 @@ class TestOllamaClient:
         categories = ["Documents", "Pictures", "Miscellaneous"]
 
         result = client.classify_file(file_info, categories)
-        assert result == "Miscellaneous"
+        assert result is None
 
     @patch("core.ollama_client.requests.post")
     def test_classify_file_case_insensitive(self, mock_post, client):
