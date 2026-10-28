@@ -234,7 +234,13 @@ python build/build.py
 
 ## 🔧 Configuration
 
-Configuration is stored in `config/user_config.json` (created on first save). It merges with `config/default_config.json` defaults. Key settings:
+Settings are persisted in the user's application-data folder (`%LOCALAPPDATA%\\LocalAIFileOrganizer\\user_config.json` on Windows). The SQLite database, including custom categories and indexed files, is stored alongside it as `file_organizer.db`; logs are in `logs/`. These are independent of the cloned Git branch, installation folder and working directory. Version-controlled defaults remain in `config/default_config.json`.
+
+On the first launch after upgrading, the app imports any legacy `config/user_config.json` and `file_organizer.db` from the repository or previous working directory **if the new files don't already exist**. It copies rather than moves; existing app-data files are never replaced. Explicit absolute database paths remain supported. The scan folders, last selected tab, and up to 2,000 existing indexed files are also restored at startup.
+
+**Back up** `%LOCALAPPDATA%\\LocalAIFileOrganizer` regularly. It can contain an API key if a cloud AI provider is configured; do not add it to Git. In Settings, click **Save Settings** to persist changes immediately. Settings are also saved on normal exit. See [Persistence and migration](docs/PERSISTENCE.md) for troubleshooting.
+
+Key settings:
 
 | Setting | Default | Description |
 |---------|---------|-------------|

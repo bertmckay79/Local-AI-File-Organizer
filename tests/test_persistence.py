@@ -137,3 +137,16 @@ def test_migrate_real_sqlite_database_and_reopen_with_existing_categories(
     again = DatabaseManager(storage.resolve_database_path())
     assert again.get_custom_categories()[0]["name"] == "Crafts / Model Painting"
     again.disconnect()
+
+
+
+def test_scan_path_and_active_tab_settings_survive_restart(data_dir):
+    before = ConfigManager()
+    before.set("scan", "recent_paths", ["D:/Books", "E:/Models"])
+    before.set("organize", "quick_scan_paths", ["D:/Books"])
+    before.set("ui", "active_tab", 3)
+    before.save()
+    after = ConfigManager()
+    assert after.get("scan", "recent_paths") == ["D:/Books", "E:/Models"]
+    assert after.get("organize", "quick_scan_paths") == ["D:/Books"]
+    assert after.get("ui", "active_tab") == 3
