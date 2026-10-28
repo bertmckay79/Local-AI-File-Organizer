@@ -294,6 +294,7 @@ class QuickOrganizeView(QWidget):
     """All-in-one: Scan -> Analyze -> Organize in a single flow."""
 
     finished_organize = Signal(dict)
+    paths_changed = Signal(list)
 
     def __init__(self, config, db, ollama, organizer, metadata_extractor, content_reader, ocr):
         super().__init__()
@@ -309,6 +310,9 @@ class QuickOrganizeView(QWidget):
         self._metadata_map = {}
         self._last_op_ids = []
         self._init_ui()
+        for existing in self.config.get("organize", {}).get("quick_scan_paths", []):
+            if isinstance(existing, str) and existing:
+                self.add_scan_path(existing, notify=False)
 
     def _init_ui(self):
         layout = QVBoxLayout(self)
@@ -419,8 +423,7 @@ class QuickOrganizeView(QWidget):
     def _add_folder(self):
         folder = QFileDialog.getExistingDirectory(self, "Select Folder to Scan")
         if folder:
-            self.scan_paths.append(folder)
-            self.folder_list.setText("  |  ".join(self.scan_paths))
+            self.add_scan_path(folder)
             # Default output path = first scan folder
             if not self.output_edit.text().strip():
                 self.output_edit.setText(folder)
@@ -428,6 +431,7 @@ class QuickOrganizeView(QWidget):
     def _clear_folders(self):
         self.scan_paths.clear()
         self.folder_list.setText("")
+        self.paths_changed.emit([])
 
     def _populate_date_struct_table(self):
         """Populate the per-category date structure table."""
@@ -471,9 +475,12 @@ class QuickOrganizeView(QWidget):
         if folder:
             self.output_edit.setText(folder)
 
-    def add_scan_path(self, path):
-        self.scan_paths.append(path)
-        self.folder_list.setText("  |  ".join(self.scan_paths))
+    def add_scan_path(self, path, notify=True):
+        if path not in self.scan_paths:
+            self.scan_paths.append(path)
+            self.folder_list.setText("  |  ".join(self.scan_paths))
+            if notify:
+                self.paths_changed.emit(list(self.scan_paths))
 
     def _on_go_btn(self):
         """Toggle between Go and Stop."""
