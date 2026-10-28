@@ -572,6 +572,45 @@ class SettingsView(QWidget):
         )
         layout.addRow("", self.book_lookup_enabled)
 
+        calibre = self.config_manager.config.get("calibre", {})
+        layout.addRow(QLabel("Calibre ebook integration (EPUB, MOBI, AZW3, etc.)"))
+        self.calibre_enabled = QCheckBox(
+            "Check ebooks against a local Calibre library during analysis"
+        )
+        self.calibre_enabled.setChecked(calibre.get("enabled", False))
+        layout.addRow("", self.calibre_enabled)
+
+        calibre_row = QHBoxLayout()
+        self.calibre_library = QLineEdit(calibre.get("library_path", ""))
+        self.calibre_library.setPlaceholderText("Library folder containing metadata.db")
+        calibre_row.addWidget(self.calibre_library)
+        calibre_browse = QPushButton("Browse...")
+        calibre_browse.clicked.connect(lambda: self._browse_folder(self.calibre_library))
+        calibre_row.addWidget(calibre_browse)
+        layout.addRow("Calibre library:", calibre_row)
+
+        self.calibre_cli = QLineEdit(calibre.get("cli_path", ""))
+        self.calibre_cli.setPlaceholderText(
+            "Optional Calibre program folder; leave blank if calibredb is in PATH"
+        )
+        layout.addRow("Calibre tools:", self.calibre_cli)
+
+        self.calibre_import = QCheckBox(
+            "Import missing ebooks into Calibre (source file is not deleted)"
+        )
+        self.calibre_import.setChecked(calibre.get("import_missing", False))
+        layout.addRow("", self.calibre_import)
+
+        self.calibre_metadata = QCheckBox(
+            "After import, download metadata using Calibre's online sources"
+        )
+        self.calibre_metadata.setChecked(calibre.get("fetch_metadata", False))
+        self.calibre_metadata.setToolTip(
+            "Calibre may send an ISBN/title/author to online metadata providers. "
+            "Downloaded metadata is applied only to the imported Calibre record."
+        )
+        layout.addRow("", self.calibre_metadata)
+
         self.empty_folders = QCheckBox("Empty folder detection")
         self.empty_folders.setChecked(adv.get("empty_folder_detection", True))
         layout.addRow("", self.empty_folders)
@@ -1007,6 +1046,12 @@ class SettingsView(QWidget):
         config.setdefault("book_lookup", {})["external_enabled"] = (
             self.book_lookup_enabled.isChecked()
         )
+        calibre = config.setdefault("calibre", {})
+        calibre["enabled"] = self.calibre_enabled.isChecked()
+        calibre["library_path"] = self.calibre_library.text().strip()
+        calibre["cli_path"] = self.calibre_cli.text().strip()
+        calibre["import_missing"] = self.calibre_import.isChecked()
+        calibre["fetch_metadata"] = self.calibre_metadata.isChecked()
         config["advanced"]["empty_folder_detection"] = self.empty_folders.isChecked()
         config["advanced"]["large_file_threshold_mb"] = self.large_threshold.value()
         config["advanced"]["disk_usage_analysis"] = self.disk_analysis.isChecked()

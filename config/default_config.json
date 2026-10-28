@@ -111,5 +111,13 @@
   },
   "book_lookup": {
     "external_enabled": false
+  },
+  "calibre": {
+    "enabled": false,
+    "library_path": "",
+    "cli_path": "",
+    "import_missing": false,
+    "fetch_metadata": false,
+    "timeout": 90
   }
 }
