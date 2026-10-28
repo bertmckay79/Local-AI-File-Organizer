@@ -100,7 +100,7 @@ class AnalyzeWorker(QThread):
     """Worker thread for AI analysis (or rule-based fallback)."""
 
     progress = Signal(int, int)
-    file_analyzed = Signal(str, str, str)  # file_path, category, reason
+    file_analyzed = Signal(str, str, str, str)  # file_path, category, suggested_category, reason
     status_update = Signal(str)
     error = Signal(str)
     finished_analysis = Signal(dict)  # {file_path: category}
@@ -161,7 +161,7 @@ class AnalyzeWorker(QThread):
                     decision = classifier.classify(file_data)
                     category = decision.category
                     results[file_path] = category
-                    self.file_analyzed.emit(file_path, category, decision.reason)
+                    self.file_analyzed.emit(file_path, category, decision.suggested_category or "", decision.reason)
                     file_data["category"] = category
                     file_data["metadata_json"] = (
                         json.dumps(decision.metadata, default=str) if decision.metadata else None
@@ -183,7 +183,7 @@ class AnalyzeWorker(QThread):
                     # Rule-based fallback
                     category = rule_classifier.classify(file_data)
                     results[file_path] = category
-                    self.file_analyzed.emit(file_path, category, "Extension-only classification")
+                    self.file_analyzed.emit(file_path, category, "", "Extension-only classification")
 
                     file_data["category"] = category
                     file_data["analyzed_at"] = json.dumps({"timestamp": None, "method": "rule-based"})
@@ -193,7 +193,7 @@ class AnalyzeWorker(QThread):
                 self.logger.error(f"Analysis error for {file_name}: {e}")
                 category = NEEDS_REVIEW if self.use_ai else "Miscellaneous"
                 results[file_path] = category
-                self.file_analyzed.emit(file_path, category, str(e)[:160])
+                self.file_analyzed.emit(file_path, category, "", str(e)[:160])
                 errors += 1
 
             processed += 1
@@ -298,12 +298,15 @@ class AnalyzeView(QWidget):
         preview_layout = QVBoxLayout()
 
         self.preview_table = QTableWidget()
-        self.preview_table.setColumnCount(4)
-        self.preview_table.setHorizontalHeaderLabels(["File", "Path", "Category", "Classification reason"])
+        self.preview_table.setColumnCount(5)
+        self.preview_table.setHorizontalHeaderLabels([
+            "File", "Path", "Category", "Suggested category", "Classification reason"
+        ])
         self.preview_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
         self.preview_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         self.preview_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
         self.preview_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        self.preview_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.Stretch)
         self.preview_table.setAlternatingRowColors(True)
         preview_layout.addWidget(self.preview_table)
 
@@ -456,14 +459,18 @@ class AnalyzeView(QWidget):
         self.progress_bar.setMaximum(total)
         self.progress_bar.setValue(current)
 
-    def _on_file_analyzed(self, file_path: str, category: str, reason: str):
-        """Add a result to the preview table."""
+    def _on_file_analyzed(self, file_path: str, category: str,
+                          suggestion: str, reason: str):
+        """Show the proposed book category separately from its unconfirmed category."""
         row = self.preview_table.rowCount()
         self.preview_table.insertRow(row)
         self.preview_table.setItem(row, 0, QTableWidgetItem(Path(file_path).name))
         self.preview_table.setItem(row, 1, QTableWidgetItem(file_path))
         self.preview_table.setItem(row, 2, QTableWidgetItem(category))
-        self.preview_table.setItem(row, 3, QTableWidgetItem(reason))
+        self.preview_table.setItem(row, 3, QTableWidgetItem(suggestion))
+        reason_item = QTableWidgetItem(reason)
+        reason_item.setToolTip(reason)
+        self.preview_table.setItem(row, 4, reason_item)
 
     def _on_status(self, msg: str):
         self.status_label.setText(msg)
