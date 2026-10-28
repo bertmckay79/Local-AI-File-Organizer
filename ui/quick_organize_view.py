@@ -6,6 +6,9 @@ Runs the entire pipeline in a single flow with a live progress display.
 import os
 import json
 from pathlib import Path
+from core.document_classifier import (
+    DocumentClassificationService, load_category_definitions, NEEDS_REVIEW
+)
 from datetime import datetime
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QProgressBar,
@@ -159,18 +162,12 @@ class QuickOrganizeWorker(QThread):
         from ui.analyze_view import RuleBasedClassifier
 
         categories_path = Path(__file__).parent.parent / "config" / "categories.json"
-        with open(categories_path, "r") as f:
-            cat_config = json.load(f)
-        categories = [c["name"] for c in cat_config["categories"]]
-
-        # Add custom categories from DB (same as Analyze tab)
-        try:
-            custom = self.db.get_custom_categories()
-            categories.extend(c["name"] for c in custom if c["name"] not in categories)
-        except Exception:
-            pass
-
+        definitions = load_category_definitions(categories_path, self.db)
+        categories = [c["name"] for c in definitions]
         rule_classifier = RuleBasedClassifier(categories)
+        classifier = DocumentClassificationService(
+            self.ollama, self.content_reader, self.metadata_extractor, self.ocr, definitions
+        )
         file_categories = {}
         total = len(files)
 
@@ -181,52 +178,25 @@ class QuickOrganizeWorker(QThread):
             category = None
 
             if self.use_ai:
-                # Extract metadata (same as AnalyzeWorker)
-                metadata = {}
+                decision = classifier.classify(file_data)
+                category = decision.category
+                file_data["category"] = category
+                file_data["metadata_json"] = (
+                    json.dumps(decision.metadata, default=str) if decision.metadata else None
+                )
+                file_data["content_summary"] = decision.content_summary
+                file_data["analyzed_at"] = json.dumps({
+                    "method": "ai",
+                    "requires_review": decision.requires_review,
+                    "reason": decision.reason
+                })
+                if decision.requires_review:
+                    self.logger.warning("Quick Organize skipped %s: %s",
+                                        file_path, decision.reason)
                 try:
-                    metadata = self.metadata_extractor.extract(file_path)
-                except Exception:
-                    pass
-
-                # Read content for documents (same as AnalyzeWorker)
-                content_summary = None
-                try:
-                    content_summary = self.content_reader.read_summary(file_path, max_length=500)
-                except Exception:
-                    pass
-
-                # OCR for scanned PDFs (same as AnalyzeWorker)
-                if not content_summary and self.ocr and self.ocr.is_available():
-                    try:
-                        content_summary = self.ocr.extract_text(file_path, max_length=500)
-                    except Exception:
-                        pass
-
-                file_info = {
-                    "file_name": file_data.get("file_name", ""),
-                    "extension": file_data.get("extension", ""),
-                    "metadata": metadata,
-                }
-                try:
-                    category = self.ollama.classify_file(file_info, categories, content_summary)
-                except Exception:
-                    category = None
-
-                # If AI fails or returns Miscellaneous, try rule-based as fallback
-                if not category or category == "Miscellaneous":
-                    rule_category = rule_classifier.classify(file_data)
-                    if rule_category and rule_category != "Miscellaneous":
-                        category = rule_category
-
-                # Save analysis results to DB (same as AnalyzeWorker)
-                if category:
-                    file_data["category"] = category
-                    file_data["metadata_json"] = json.dumps(metadata, default=str) if metadata else None
-                    file_data["content_summary"] = content_summary
-                    try:
-                        self.db.upsert_file(file_data)
-                    except Exception:
-                        pass
+                    self.db.upsert_file(file_data)
+                except Exception as exc:
+                    self.logger.warning("Could not save AI result for %s: %s", file_path, exc)
             else:
                 category = rule_classifier.classify(file_data)
                 # Save to DB
@@ -237,13 +207,16 @@ class QuickOrganizeWorker(QThread):
                     pass
 
             if not category:
-                category = rule_classifier.classify(file_data)
+                category = NEEDS_REVIEW if self.use_ai else rule_classifier.classify(file_data)
 
-            file_categories[file_path] = category
+            # Keep uncertain results visible but out of the automatic move queue.
+            if category != NEEDS_REVIEW:
+                file_categories[file_path] = category
             results["categories"][category] = results["categories"].get(category, 0) + 1
             results["analyzed"] += 1
 
-            dest = str(self.organizer.get_category_path(category, file_path) / Path(file_path).name)
+            dest = ("Manual review — file unchanged" if category == NEEDS_REVIEW else
+                    str(self.organizer.get_category_path(category, file_path) / Path(file_path).name))
             self.file_processed.emit(file_data.get("file_name", ""), category, dest)
             self.progress.emit("Analyzing", i + 1, total)
 
@@ -256,6 +229,7 @@ class QuickOrganizeWorker(QThread):
         return file_categories
 
     def _organize_stage(self, file_categories, results):
+        file_categories = {p: c for p, c in file_categories.items() if c != NEEDS_REVIEW}
         # Apply category filter
         filter_cat = self._filter_category
         if filter_cat and filter_cat != "all":

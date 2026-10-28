@@ -6,6 +6,9 @@ Falls back to rule-based classification when Ollama is not available.
 
 import json
 from pathlib import Path
+from core.document_classifier import (
+    DocumentClassificationService, load_category_definitions, NEEDS_REVIEW
+)
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QProgressBar,
     QTableWidget, QTableWidgetItem, QHeaderView, QGroupBox, QMessageBox,
@@ -105,10 +108,13 @@ class AnalyzeWorker(QThread):
     def __init__(self, files: list[dict], categories: list[str],
                  ollama: OllamaClient, metadata_extractor: MetadataExtractor,
                  content_reader: ContentReader, ocr: OCRProcessor, db: DatabaseManager,
-                 use_ai: bool = True):
+                 use_ai: bool = True, category_definitions: list[dict] = None):
         super().__init__()
         self.files = files
         self.categories = categories
+        self.category_definitions = category_definitions or [
+            {"name": name, "keywords": []} for name in categories
+        ]
         self.ollama = ollama
         self.metadata_extractor = metadata_extractor
         self.content_reader = content_reader
@@ -136,6 +142,10 @@ class AnalyzeWorker(QThread):
         # Use rule-based classifier as fallback
         # Always create rule_classifier — used as fallback even in AI mode
         rule_classifier = RuleBasedClassifier(self.categories)
+        classifier = DocumentClassificationService(
+            self.ollama, self.content_reader, self.metadata_extractor,
+            self.ocr, self.category_definitions
+        )
 
         for file_data in self.files:
             if self._cancel:
@@ -146,55 +156,24 @@ class AnalyzeWorker(QThread):
 
             try:
                 if self.use_ai:
-                    # Extract metadata
-                    metadata = {}
-                    try:
-                        metadata = self.metadata_extractor.extract(file_path)
-                    except Exception:
-                        pass
-
-                    # Read content for documents
-                    content_summary = None
-                    try:
-                        content_summary = self.content_reader.read_summary(file_path, max_length=3000)
-                    except Exception:
-                        pass
-
-                    # OCR for scanned PDFs (if enabled)
-                    if not content_summary and self.ocr.is_available():
-                        try:
-                            content_summary = self.ocr.extract_text(file_path, max_length=3000)
-                        except Exception:
-                            pass
-
-                    # Classify with Ollama
-                    file_info = {
-                        "file_name": file_name,
-                        "extension": file_data.get("extension", ""),
-                        "metadata": metadata,
-                    }
-
-                    category = self.ollama.classify_file(file_info, self.categories, content_summary)
-
-                    # If AI fails or returns Miscellaneous, try rule-based as fallback
-                    if not category or category == "Miscellaneous":
-                        rule_category = rule_classifier.classify(file_data)
-                        if rule_category and rule_category != "Miscellaneous":
-                            category = rule_category
-
-                    if category:
-                        results[file_path] = category
-                        self.file_analyzed.emit(file_path, category)
-
-                        # Update database
-                        file_data["category"] = category
-                        file_data["metadata_json"] = json.dumps(metadata, default=str) if metadata else None
-                        file_data["content_summary"] = content_summary
-                        file_data["analyzed_at"] = json.dumps({"timestamp": None})
-                        self.db.upsert_file(file_data)
-                    else:
-                        results[file_path] = "Miscellaneous"
-                        errors += 1
+                    decision = classifier.classify(file_data)
+                    category = decision.category
+                    results[file_path] = category
+                    self.file_analyzed.emit(file_path, category)
+                    file_data["category"] = category
+                    file_data["metadata_json"] = (
+                        json.dumps(decision.metadata, default=str) if decision.metadata else None
+                    )
+                    file_data["content_summary"] = decision.content_summary
+                    file_data["analyzed_at"] = json.dumps({
+                        "method": "ai",
+                        "requires_review": decision.requires_review,
+                        "reason": decision.reason
+                    })
+                    if decision.requires_review:
+                        self.logger.warning("Review required for %s: %s",
+                                            file_path, decision.reason)
+                    self.db.upsert_file(file_data)
                 else:
                     # Rule-based fallback
                     category = rule_classifier.classify(file_data)
@@ -207,7 +186,9 @@ class AnalyzeWorker(QThread):
 
             except Exception as e:
                 self.logger.error(f"Analysis error for {file_name}: {e}")
-                results[file_path] = "Miscellaneous"
+                category = NEEDS_REVIEW if self.use_ai else "Miscellaneous"
+                results[file_path] = category
+                self.file_analyzed.emit(file_path, category)
                 errors += 1
 
             processed += 1
@@ -436,13 +417,8 @@ class AnalyzeView(QWidget):
 
         # Get categories from config
         categories_path = Path(__file__).parent.parent / "config" / "categories.json"
-        with open(categories_path, "r") as f:
-            cat_config = json.load(f)
-        categories = [c["name"] for c in cat_config["categories"]]
-
-        # Add custom categories from DB
-        custom = self.db.get_custom_categories()
-        categories.extend(c["name"] for c in custom)
+        definitions = load_category_definitions(categories_path, self.db)
+        categories = [c["name"] for c in definitions]
 
         self.progress_bar.setVisible(True)
         self.progress_bar.setValue(0)
@@ -455,7 +431,7 @@ class AnalyzeView(QWidget):
         self.analyze_worker = AnalyzeWorker(
             self.files_to_analyze, categories, self.ollama,
             self.metadata_extractor, self.content_reader, self.ocr,
-            self.db, use_ai=use_ai
+            self.db, use_ai=use_ai, category_definitions=definitions
         )
         self.analyze_worker.progress.connect(self._on_progress)
         self.analyze_worker.file_analyzed.connect(self._on_file_analyzed)
@@ -481,7 +457,9 @@ class AnalyzeView(QWidget):
         self.preview_table.setItem(row, 0, QTableWidgetItem(Path(file_path).name))
         self.preview_table.setItem(row, 1, QTableWidgetItem(file_path))
         self.preview_table.setItem(row, 2, QTableWidgetItem(category))
-        self.preview_table.setItem(row, 3, QTableWidgetItem("—"))
+        self.preview_table.setItem(
+            row, 3, QTableWidgetItem("Review" if category == NEEDS_REVIEW else "—")
+        )
 
     def _on_status(self, msg: str):
         self.status_label.setText(msg)

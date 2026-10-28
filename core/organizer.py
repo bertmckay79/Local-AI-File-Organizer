@@ -97,6 +97,8 @@ class FileOrganizer:
         Move a single file to its category folder.
         Returns: (success, message, operation_id)
         """
+        if category == "Needs Review":
+            return False, "Review required; file was not moved", None
         src = Path(src_path)
         if not src.exists():
             return False, f"Source file not found: {src_path}", None

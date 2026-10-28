@@ -149,17 +149,43 @@
     },
     {
       "name": "Downloads",
-      "extensions": [".crdownload", ".part", ".download"],
-      "keywords": ["download", "temp", "partial"]
+      "extensions": [
+        ".crdownload",
+        ".part",
+        ".download"
+      ],
+      "keywords": [
+        "download",
+        "temp",
+        "partial"
+      ]
     },
     {
       "name": "Android",
-      "extensions": [".apk", ".xapk", ".apks", ".aab", ".dex"],
-      "keywords": ["android", "apk", "app", "mobile", "google play", "sideload"]
+      "extensions": [
+        ".apk",
+        ".xapk",
+        ".apks",
+        ".aab",
+        ".dex"
+      ],
+      "keywords": [
+        "android",
+        "apk",
+        "app",
+        "mobile",
+        "google play",
+        "sideload"
+      ]
     },
     {
       "name": "GitHub",
-      "extensions": [".git", ".gitignore", ".gitattributes", ".gitmodules"],
+      "extensions": [
+        ".git",
+        ".gitignore",
+        ".gitattributes",
+        ".gitmodules"
+      ],
       "keywords": [
         "github",
         "git",
@@ -279,7 +305,13 @@
         ".rpm",
         ".tgz"
       ],
-      "keywords": ["archive", "compressed", "backup", "zip", "bundle"]
+      "keywords": [
+        "archive",
+        "compressed",
+        "backup",
+        "zip",
+        "bundle"
+      ]
     },
     {
       "name": "Installers",
@@ -332,7 +364,15 @@
     },
     {
       "name": "RPG - Dungeons & Dragons",
-      "extensions": [".pdf", ".epub", ".docx", ".txt", ".md", ".rtf", ".odt"],
+      "extensions": [
+        ".pdf",
+        ".epub",
+        ".docx",
+        ".txt",
+        ".md",
+        ".rtf",
+        ".odt"
+      ],
       "keywords": [
         "D&D",
         "5e",
@@ -345,7 +385,15 @@
     },
     {
       "name": "RPG - Pathfinder",
-      "extensions": [".pdf", ".epub", ".docx", ".txt", ".md", ".rtf", ".odt"],
+      "extensions": [
+        ".pdf",
+        ".epub",
+        ".docx",
+        ".txt",
+        ".md",
+        ".rtf",
+        ".odt"
+      ],
       "keywords": [
         "Pathfinder",
         "Paizo",
@@ -356,7 +404,15 @@
     },
     {
       "name": "RPG - Other Systems",
-      "extensions": [".pdf", ".epub", ".docx", ".txt", ".md", ".rtf", ".odt"],
+      "extensions": [
+        ".pdf",
+        ".epub",
+        ".docx",
+        ".txt",
+        ".md",
+        ".rtf",
+        ".odt"
+      ],
       "keywords": [
         "Call of Cthulhu",
         "Shadowrun",
@@ -367,7 +423,15 @@
     },
     {
       "name": "RPG - Adventures & Campaigns",
-      "extensions": [".pdf", ".epub", ".docx", ".txt", ".md", ".rtf", ".odt"],
+      "extensions": [
+        ".pdf",
+        ".epub",
+        ".docx",
+        ".txt",
+        ".md",
+        ".rtf",
+        ".odt"
+      ],
       "keywords": [
         "adventure",
         "campaign",
@@ -379,7 +443,15 @@
     },
     {
       "name": "RPG - Game Master Resources",
-      "extensions": [".pdf", ".epub", ".docx", ".txt", ".md", ".rtf", ".odt"],
+      "extensions": [
+        ".pdf",
+        ".epub",
+        ".docx",
+        ".txt",
+        ".md",
+        ".rtf",
+        ".odt"
+      ],
       "keywords": [
         "GM guide",
         "game master",
@@ -391,12 +463,34 @@
     },
     {
       "name": "Software - C# & .NET",
-      "extensions": [".pdf", ".epub", ".docx", ".txt", ".md", ".rtf", ".odt"],
-      "keywords": ["C#", ".NET", "ASP.NET Core", "Entity Framework", "Blazor"]
+      "extensions": [
+        ".pdf",
+        ".epub",
+        ".docx",
+        ".txt",
+        ".md",
+        ".rtf",
+        ".odt"
+      ],
+      "keywords": [
+        "C#",
+        ".NET",
+        "ASP.NET Core",
+        "Entity Framework",
+        "Blazor"
+      ]
     },
     {
       "name": "Software - Vue.js",
-      "extensions": [".pdf", ".epub", ".docx", ".txt", ".md", ".rtf", ".odt"],
+      "extensions": [
+        ".pdf",
+        ".epub",
+        ".docx",
+        ".txt",
+        ".md",
+        ".rtf",
+        ".odt"
+      ],
       "keywords": [
         "Vue 3",
         "Vue Router",
@@ -407,22 +501,70 @@
     },
     {
       "name": "Software - TypeScript",
-      "extensions": [".pdf", ".epub", ".docx", ".txt", ".md", ".rtf", ".odt"],
-      "keywords": ["TypeScript", "generics", "static typing", "type inference"]
+      "extensions": [
+        ".pdf",
+        ".epub",
+        ".docx",
+        ".txt",
+        ".md",
+        ".rtf",
+        ".odt"
+      ],
+      "keywords": [
+        "TypeScript",
+        "generics",
+        "static typing",
+        "type inference"
+      ]
     },
     {
       "name": "Software - JavaScript",
-      "extensions": [".pdf", ".epub", ".docx", ".txt", ".md", ".rtf", ".odt"],
-      "keywords": ["JavaScript", "ECMAScript", "Node.js", "ES modules"]
+      "extensions": [
+        ".pdf",
+        ".epub",
+        ".docx",
+        ".txt",
+        ".md",
+        ".rtf",
+        ".odt"
+      ],
+      "keywords": [
+        "JavaScript",
+        "ECMAScript",
+        "Node.js",
+        "ES modules"
+      ]
     },
     {
       "name": "Software - Web Development",
-      "extensions": [".pdf", ".epub", ".docx", ".txt", ".md", ".rtf", ".odt"],
-      "keywords": ["HTML", "CSS", "frontend", "web design", "accessibility"]
+      "extensions": [
+        ".pdf",
+        ".epub",
+        ".docx",
+        ".txt",
+        ".md",
+        ".rtf",
+        ".odt"
+      ],
+      "keywords": [
+        "HTML",
+        "CSS",
+        "frontend",
+        "web design",
+        "accessibility"
+      ]
     },
     {
       "name": "Software - Architecture",
-      "extensions": [".pdf", ".epub", ".docx", ".txt", ".md", ".rtf", ".odt"],
+      "extensions": [
+        ".pdf",
+        ".epub",
+        ".docx",
+        ".txt",
+        ".md",
+        ".rtf",
+        ".odt"
+      ],
       "keywords": [
         "design patterns",
         "domain-driven design",
@@ -433,7 +575,15 @@
     },
     {
       "name": "Software - Security",
-      "extensions": [".pdf", ".epub", ".docx", ".txt", ".md", ".rtf", ".odt"],
+      "extensions": [
+        ".pdf",
+        ".epub",
+        ".docx",
+        ".txt",
+        ".md",
+        ".rtf",
+        ".odt"
+      ],
       "keywords": [
         "OWASP",
         "application security",
@@ -444,7 +594,15 @@
     },
     {
       "name": "Game Development - Unity",
-      "extensions": [".pdf", ".epub", ".docx", ".txt", ".md", ".rtf", ".odt"],
+      "extensions": [
+        ".pdf",
+        ".epub",
+        ".docx",
+        ".txt",
+        ".md",
+        ".rtf",
+        ".odt"
+      ],
       "keywords": [
         "Unity",
         "Unity Engine",
@@ -455,7 +613,15 @@
     },
     {
       "name": "Game Development - General",
-      "extensions": [".pdf", ".epub", ".docx", ".txt", ".md", ".rtf", ".odt"],
+      "extensions": [
+        ".pdf",
+        ".epub",
+        ".docx",
+        ".txt",
+        ".md",
+        ".rtf",
+        ".odt"
+      ],
       "keywords": [
         "game programming",
         "Godot",
@@ -466,7 +632,15 @@
     },
     {
       "name": "Game Design",
-      "extensions": [".pdf", ".epub", ".docx", ".txt", ".md", ".rtf", ".odt"],
+      "extensions": [
+        ".pdf",
+        ".epub",
+        ".docx",
+        ".txt",
+        ".md",
+        ".rtf",
+        ".odt"
+      ],
       "keywords": [
         "game mechanics",
         "level design",
@@ -477,17 +651,51 @@
     },
     {
       "name": "Fiction - Fantasy",
-      "extensions": [".pdf", ".epub", ".docx", ".txt", ".md", ".rtf", ".odt"],
-      "keywords": ["fantasy", "fantasy novel", "magic", "sword and sorcery"]
+      "extensions": [
+        ".pdf",
+        ".epub",
+        ".docx",
+        ".txt",
+        ".md",
+        ".rtf",
+        ".odt"
+      ],
+      "keywords": [
+        "fantasy",
+        "fantasy novel",
+        "magic",
+        "sword and sorcery"
+      ]
     },
     {
       "name": "Fiction - Science Fiction",
-      "extensions": [".pdf", ".epub", ".docx", ".txt", ".md", ".rtf", ".odt"],
-      "keywords": ["science fiction", "sci-fi", "space opera", "cyberpunk"]
+      "extensions": [
+        ".pdf",
+        ".epub",
+        ".docx",
+        ".txt",
+        ".md",
+        ".rtf",
+        ".odt"
+      ],
+      "keywords": [
+        "science fiction",
+        "sci-fi",
+        "space opera",
+        "cyberpunk"
+      ]
     },
     {
       "name": "Reference & Manuals",
-      "extensions": [".pdf", ".epub", ".docx", ".txt", ".md", ".rtf", ".odt"],
+      "extensions": [
+        ".pdf",
+        ".epub",
+        ".docx",
+        ".txt",
+        ".md",
+        ".rtf",
+        ".odt"
+      ],
       "keywords": [
         "reference",
         "handbook",
@@ -498,6 +706,11 @@
     },
     {
       "name": "Miscellaneous",
+      "extensions": [],
+      "keywords": []
+    },
+    {
+      "name": "Needs Review",
       "extensions": [],
       "keywords": []
     }

@@ -237,9 +237,14 @@ class OrganizeView(QWidget):
         layout.addWidget(self.status_label)
 
     def set_file_categories(self, file_categories: dict):
-        self.file_categories = file_categories
-        self._all_file_categories = dict(file_categories)
-        self.status_label.setText(f"{len(file_categories)} files ready for organization")
+        # Review-required results must not enter the move queue.
+        eligible = {p: c for p, c in file_categories.items() if c != "Needs Review"}
+        skipped = len(file_categories) - len(eligible)
+        self.file_categories = eligible
+        self._all_file_categories = dict(eligible)
+        self.status_label.setText(
+            f"{len(eligible)} files ready for organization; {skipped} need review"
+        )
         self._generate_preview()
 
     def _get_date_structures_from_table(self) -> dict:

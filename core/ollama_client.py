@@ -316,7 +316,8 @@ class OllamaClient:
     # ── classification ──────────────────────────────────────────────
 
     def classify_file(self, file_info: dict, categories: list[str],
-                      content_summary: str = None) -> Optional[str]:
+                      content_summary: str = None,
+                      category_details: list[dict] = None) -> Optional[str]:
         """Classify a file into one of the given categories."""
         categories_str = ", ".join(categories)
         file_name = file_info.get("file_name", "unknown")
@@ -332,7 +333,19 @@ class OllamaClient:
         if content_summary:
             prompt_parts.append(f"Content summary: {content_summary[:3000]}")
 
-        prompt_parts.append(f"\nAvailable categories: {categories_str}")
+        if category_details:
+            descriptions = []
+            for item in category_details:
+                name = item.get("name", "")
+                if name in categories:
+                    keywords = ", ".join(str(k) for k in item.get("keywords", [])[:12])
+                    description = item.get("description", "")
+                    descriptions.append(
+                        f"- {name}: {description} Keywords: {keywords}".strip()
+                    )
+            prompt_parts.append("Category definitions:\n" + "\n".join(descriptions))
+        else:
+            prompt_parts.append(f"\nAvailable categories: {categories_str}")
         prompt_parts.append(
             "\nYou are a professional file organizer. Based on the filename, extension, "
             "metadata, and available content, return only the best category from the "
@@ -361,11 +374,11 @@ class OllamaClient:
             {"role": "user", "content": prompt},
         ]
 
-        response = self.chat(messages)
+        response = self.chat(messages, num_predict=max(512, self.max_tokens))
         if response:
             try:
                 result = json.loads(response.strip())
-                category = result.get("category", "").strip()
+                category = str(result.get("category", "")).strip()
                 if category in categories:
                     return category
                 for cat in categories:
